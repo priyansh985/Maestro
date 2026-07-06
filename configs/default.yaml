@@ -1,0 +1,72 @@
+# Repro defaults for arXiv:2508.10043 reproduction
+# All magic numbers live here. See Section 1.4 of the reproduction plan.
+seed: 42
+
+# ===== capture (Sec 3.1 Packet Capture Module) =====
+capture:
+  iface: "lo"                # ASSUMPTION A3: loopback to allow repro without a NIC
+  baseline_packets: 2000
+  baseline_duration_s: 30.0  # 34s baseline from Sec 6.3; rounded for clean baseline
+  pcap_dir: "data/pcap"
+  goldeneye_pcap: "data/pcap/goldeneye.pcap"
+  baseline_pcap: "data/pcap/baseline.pcap"
+
+# ===== DoS replay experiment TC1 (Sec 6.2 / 6.3) =====
+dos_replay:
+  packets_per_second: 10000  # Sec 6.2
+  iterations: 5              # Sec 6.2
+  sample_interval_s: 1.0    # Sec 6.2 - metrics @ 1 Hz
+  expected_baseline_tel_s: [7.0, 8.0]   # Sec 6.2 normal telemetry interval
+  expected_attack_tel_s: 13.0           # Sec 6.2 stressed interval
+  tcpreplay_bin: "tcpreplay"
+  use_scapy_fallback: true   # ASSUMPTION A10: fall back to scapy sendp if no tcpreplay
+
+# ===== memory poisoning TC2 (Sec 6.3) =====
+memory_poison:
+  history_path: "data/memory/history.json"
+  num_injected: 20           # Sec 6.3
+  injected_severity: 0.95    # "high-severity" >= HIGH_SEV_THRESHOLD
+  expected_baseline_capture_s: 34.0  # Sec 6.3
+  severity_alpha_s: 3.0            # ASSUMPTION A8: secs per high-severity entry
+  high_severity_threshold: 0.7     # ASSUMPTION A7 + A8
+
+# ===== anomaly thresholds (Sec 4, Figure 6) =====
+anomaly:
+  cpu_high_pct: 80.0         # ASSUMPTION A6
+  mem_high_pct: 80.0
+  pkt_rate_high_pps: 8000.0
+  sustained_s: 2.0
+
+# ===== MAESTRO (Sec 4.1) =====
+maestro:
+  layers_file: "configs/ordinal_scale.yaml"  # not used directly
+  threats_file: "configs/threats.yaml"
+  ordinal:
+    low: 1
+    medium: 2
+    high: 3
+
+# ===== server / dashboard =====
+server:
+  host: "127.0.0.1"
+  port: 8000
+  ws_path: "/ws"
+  dashboard_refresh_s: 7.0   # baseline telemetry interval (Sec 6.2)
+
+# ===== LLM (Sec 3.1 LLM Reasoning Engine) =====
+llm:
+  provider: "stub"            # ASSUMPTION A1: deterministic stub keeps repro offline
+  model: "stub-reasoner"
+  api_key_env: "OPENAI_API_KEY"
+
+# ===== mitigation toggles (Sec 5.3 defense-in-depth) =====
+mitigation:
+  memory_isolation: false     # read-only history after load (Sec 5.3 L2)
+  planner_validation: false   # Sec 5.3 L3
+  telemetry_rollback: false   # Sec 5.2
+  zero_trust_api: false       # Sec 5.3 L4
+
+# ===== logging =====
+logging:
+  level: "INFO"
+  file: "results/run.log"

@@ -1,0 +1,63 @@
+# Build / tooling
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "maestro-secure-agentic-ai"
+version = "0.1.0"
+description = "Reproduction of arXiv:2508.10043 - Securing Agentic AI (MAESTRO threat modeling for LLM-based network monitoring agents)"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+authors = [{name = "Reproduction"}]
+dependencies = [
+    "fastapi>=0.110,<0.116",
+    "uvicorn[standard]>=0.29,<0.33",
+    "websockets>=12,<14",
+    "pydantic>=2.6,<2.11",
+    "pydantic-ai>=0.0.13,<0.0.31",
+    "scapy>=2.5,<2.7",
+    "psutil>=5.9,<6.2",
+    "omegaconf>=2.3,<2.4",
+    "pyyaml>=6,<6.3",
+    "rich>=13,<14",
+    "matplotlib>=3.8,<3.11",
+    "pandas>=2.2,<2.4",
+    "numpy>=1.26,<2.3",
+    "httpx>=0.27,<0.29",
+    "jinja2>=3.1,<4",
+    "python-multipart>=0.0.9,<0.1",
+]
+
+[project.optional-dependencies]
+openai = ["openai>=1.30,<1.60"]
+dev = [
+    "pytest>=8,<9",
+    "pytest-asyncio>=0.23,<0.25",
+    "ruff>=0.4,<0.7",
+    "mypy>=1.10,<1.14",
+    "types-pyyaml",
+    "types-psutil",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+extend-select = ["I", "UP", "B", "SIM", "C4"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["B011"]
+
+[tool.mypy]
+python_version = "3.10"
+ignore_missing_imports = true
+check_untyped_defs = true
+warn_unused_ignores = true

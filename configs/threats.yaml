@@ -1,0 +1,114 @@
+# Threat-to-layer mapping + per-threat P, I, E (Sec 3.2 Table 1 + Sec 4.3 Table 4)
+# Implements Eq. (1) R = P * I * E where each of P, I, E is on {1(Low), 2(Med), 3(High)}. risk_score must equal P*I*E.
+# To verify: use `python -m maestro.scripts.validate_threats`.
+threats:
+  - id: 1
+    name: "Instruction Manipulation"            # Table 1 (input behavior manipulation) / Table 4 row 1
+    table1_name: "Instruction Manipulation"
+    table1_example: "Injected log entry modifies anomaly thresholding"
+    table1_layers: ["L7", "ActionLayer"]        # Sec 3.2 Table 1: Perception + Action
+    primary_layer: "L3"                          # Sec 4.3 Table 4: Agent Frameworks (L3)
+    cross_layers: ["L2", "L5"]
+    likelihood: "high"                            # Sec 4.3 Table 4: High
+    impact: "medium"                             # Sec 4.3 Table 4: Medium
+    exploitability: "medium"
+    risk_score: 12
+  - id: 2
+    name: "Goal Manipulation"
+    table1_name: "Goal Manipulation"
+    table1_example: "Agent favors performance over security after drift"
+    table1_layers: ["L1", "L3"]
+    primary_layer: "L3"
+    cross_layers: ["L1", "L2"]
+    likelihood: "high"
+    impact: "high"
+    exploitability: "low"
+    risk_score: 9
+  - id: 3
+    name: "Chain-of-Thought Manipulation"
+    table1_name: "Chain-of-Thought Manipulation"
+    table1_example: "Agent interprets attack as normal backup"
+    table1_layers: ["L1", "L3"]
+    primary_layer: "L1"
+    cross_layers: ["L2", "L5"]
+    likelihood: "high"
+    impact: "high"
+    exploitability: "medium"
+    risk_score: 18
+  - id: 4
+    name: "Memory & Context Manipulation"
+    table1_name: "Memory & Context Manipulation"
+    table1_example: "Altered alert history causes missed repeat attack"
+    table1_layers: ["L2", "L3"]
+    primary_layer: "L3"
+    cross_layers: ["L2", "L3", "L5"]
+    likelihood: "medium"
+    impact: "high"
+    exploitability: "medium"
+    risk_score: 12
+  - id: 5
+    name: "Critical System Interaction"
+    table1_name: "Critical System Interaction"
+    table1_example: "Malicious firewall update via spoofed trigger"
+    table1_layers: ["ActionLayer"]
+    primary_layer: "L4"
+    cross_layers: ["L3", "L7"]
+    likelihood: "medium"
+    impact: "high"
+    exploitability: "medium"
+    risk_score: 12
+  - id: 6
+    name: "Planning & Reasoning Exploitation"
+    table1_name: "Planning & Reasoning Exploit"
+    table1_example: "Attacker simulates load balancing to hide DDoS"
+    table1_layers: ["L1", "L3"]
+    primary_layer: "L3"
+    cross_layers: ["L1", "L5"]
+    likelihood: "high"
+    impact: "high"
+    exploitability: "medium"
+    risk_score: 18
+  - id: 7
+    name: "Resource Exhaustion"
+    table1_name: "Resource Exhaustion"
+    table1_example: "Flooding logs exhaust token capacity"
+    table1_layers: ["L4"]
+    primary_layer: "L4"
+    cross_layers: ["L2", "L5"]
+    likelihood: "high"
+    impact: "high"
+    exploitability: "high"
+    risk_score: 27
+  - id: 8
+    name: "Knowledge Base Poisoning"
+    table1_name: "Knowledge Base Poisoning"
+    table1_example: "False threat Intel causes misclassification"
+    table1_layers: ["L2", "L1"]
+    primary_layer: "L2"
+    cross_layers: ["L1", "L3"]
+    likelihood: "high"
+    impact: "high"
+    exploitability: "low"
+    risk_score: 9
+  - id: 9
+    name: "Supply Chain Compromise"
+    table1_name: "Supply Chain Compromise"
+    table1_example: "Tainted plugin leaks sensitive data"
+    table1_layers: ["L4"]
+    primary_layer: "L2"
+    cross_layers: ["L4", "L1"]
+    likelihood: "medium"
+    impact: "high"
+    exploitability: "medium"
+    risk_score: 12
+  - id: 10
+    name: "Multi-Agent Exploitation"
+    table1_name: "Multi-Agent Exploitation"
+    table1_example: "Poisoned memory misguides downstream classification"
+    table1_layers: ["Memory", "Coordination"]
+    primary_layer: "L3"
+    cross_layers: ["L4", "L7"]
+    likelihood: "medium"
+    impact: "high"
+    exploitability: "high"
+    risk_score: 18

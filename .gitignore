@@ -1,0 +1,15 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+.env
+*.pcap
+*.pcapng
+data/pcap/*.pcap
+data/memory/history.json
+results/*
+!results/.gitkeep
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
