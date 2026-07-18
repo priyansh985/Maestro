@@ -14,6 +14,7 @@ capture:
 # ===== DoS replay experiment TC1 (Sec 6.2 / 6.3) =====
 dos_replay:
   packets_per_second: 10000  # Sec 6.2
+  benign_baseline_pps: 200.0 # ASSUMPTION A5: benign packet rate pre/post attack
   iterations: 5              # Sec 6.2
   sample_interval_s: 1.0    # Sec 6.2 - metrics @ 1 Hz
   expected_baseline_tel_s: [7.0, 8.0]   # Sec 6.2 normal telemetry interval

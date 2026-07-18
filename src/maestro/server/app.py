@@ -14,9 +14,8 @@ from __future__ import annotations
 
 import asyncio
 import json
-import logging
 import time
-from typing import Any, List
+from typing import Any
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse, JSONResponse
@@ -25,7 +24,9 @@ from ..config import load_config
 from ..logging_setup import get_logger
 from ..maestro.mapping import threat_risk_matrix
 from ..maestro.threats import load_threats
+from . import connectors_api
 from .dashboard import DASHBOARD_HTML
+from .playground import PLAYGROUND_HTML
 
 logger = get_logger("maestro.server", log_file="results/run.log")
 
@@ -38,9 +39,16 @@ def create_app(cfg: Any = None) -> FastAPI:
     threats = load_threats()
     matrix = threat_risk_matrix(threats)
 
+    # Model-connector testing dashboard + REST API (Deliverable 2).
+    app.include_router(connectors_api.router)
+
     @app.get("/", response_class=HTMLResponse)
     def root() -> str:
         return DASHBOARD_HTML.replace("{{ ws_path }}", cfg.server.ws_path)
+
+    @app.get("/playground", response_class=HTMLResponse)
+    def playground() -> str:
+        return PLAYGROUND_HTML
 
     @app.get("/risk")
     def get_risk() -> JSONResponse:
@@ -52,7 +60,7 @@ def create_app(cfg: Any = None) -> FastAPI:
 
     class ConnectionManager:
         def __init__(self) -> None:
-            self.active: List[WebSocket] = []
+            self.active: list[WebSocket] = []
 
         async def connect(self, ws: WebSocket) -> None:
             await ws.accept()
@@ -73,7 +81,7 @@ def create_app(cfg: Any = None) -> FastAPI:
     mgr = ConnectionManager()
     app.state.mgr = mgr
     app.state.cfg = cfg
-    app.state.matrix = matrix  # type: ignore[assignment]
+    app.state.matrix = matrix
 
     @app.websocket(cfg.server.ws_path)
     async def ws_endpoint(ws: WebSocket) -> None:

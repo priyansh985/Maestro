@@ -7,8 +7,8 @@ pytestmark = pytest.mark.asyncio
 
 
 async def test_app_has_routes():
-    from maestro.server.app import create_app
     from maestro.config import load_config
+    from maestro.server.app import create_app
 
     cfg = load_config()
     app = create_app(cfg)
@@ -22,8 +22,8 @@ async def test_app_has_routes():
 async def test_healthz_returns_ok():
     from fastapi.testclient import TestClient
 
-    from maestro.server.app import create_app
     from maestro.config import load_config
+    from maestro.server.app import create_app
     app = create_app(load_config())
     with TestClient(app) as client:
         r = client.get("/healthz")
@@ -34,8 +34,8 @@ async def test_healthz_returns_ok():
 async def test_risk_matrix_endpoint():
     from fastapi.testclient import TestClient
 
-    from maestro.server.app import create_app
     from maestro.config import load_config
+    from maestro.server.app import create_app
     app = create_app(load_config())
     with TestClient(app) as client:
         r = client.get("/risk")

@@ -6,11 +6,11 @@ fake high-severity entries into ``history.json`` (Sec 6.3).
 """
 from __future__ import annotations
 
+import contextlib
 import json
 import os
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Optional
 
 
 @dataclass
@@ -31,7 +31,7 @@ class AgentMemory:
 
     def __init__(self, path: str | os.PathLike):
         self.path = Path(path)
-        self.entries: List[HistoryEntry] = []
+        self.entries: list[HistoryEntry] = []
 
     def load(self) -> None:
         if not self.path.exists():
@@ -92,7 +92,5 @@ class AgentMemory:
 
     def freeze(self) -> None:
         """Sec 5.3 L2 mitigation: chmod read-only (best-effort on POSIX)."""
-        try:
+        with contextlib.suppress(OSError):
             self.path.chmod(0o444)
-        except OSError:
-            pass

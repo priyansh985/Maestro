@@ -7,15 +7,13 @@ allowable actions against an allowlist.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import List
+from dataclasses import dataclass
 
-from ..telemetry.detection import Alert, SecurityDetector
+from ..telemetry.detection import SecurityDetector
 from ..telemetry.performance import PerformanceMonitor
 from .memory import AgentMemory
 from .parameter_tuning import CaptureParams, ParameterTuning
 from .reasoning import Reasoner, StubReasoner
-
 
 # Sec 5.3 L3 allow-list of acceptable agent actions
 DEFAULT_ALLOWED_ACTIONS: set[str] = {
@@ -55,7 +53,7 @@ class Planner:
         self.reasoner = reasoner or StubReasoner()
         self.allowed_actions = allowed_actions or set(DEFAULT_ALLOWED_ACTIONS)
         self.validate_plans = validate_plans
-        self.history: List[Plan] = []
+        self.history: list[Plan] = []
 
     def step(self, pkt_rate_pps: float) -> Plan:
         alert = self.detector.evaluate(pkt_rate_pps)

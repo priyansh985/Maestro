@@ -3,9 +3,8 @@ from __future__ import annotations
 
 import pytest
 
-from maestro.maestro.threats import load_threats, threat_by_id
 from maestro.maestro.risk_score import risk_score
-
+from maestro.maestro.threats import load_threats, threat_by_id
 
 EXPECTED_TABLE_4 = {
     1: 12, 2: 9, 3: 18, 4: 12, 5: 12, 6: 18, 7: 27, 8: 9, 9: 12, 10: 18,

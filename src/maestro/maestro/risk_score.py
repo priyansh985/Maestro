@@ -8,7 +8,7 @@ Each dimension takes an ordinal on {1 (Low, 2 (Medium), 3 (High)} (Table 3).
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Literal, Optional
+from typing import Literal
 
 Qualitative = Literal["low", "medium", "high"]
 
@@ -47,11 +47,13 @@ def risk_score_components(rc: RiskComponents) -> int:
 def parse_risk(score: int) -> str:
     """Bucket an integer risk score into Low / Moderate / High priority.
 
-    Mirrors Sec 4.3.1 illustrative buckets: 8 = moderate, 9 = high, 27 =
-    critical. We use boundaries <9 Low, <18 Moderate, else High.
+    Mirrors the three illustrative buckets in Sec 4.3.1: ``R = 3`` is *low*,
+    ``R = 8`` is *moderate*, and ``R = 9`` is a *high priority area*. The
+    boundaries below reproduce those three anchor points exactly: ``< 6`` Low,
+    ``< 9`` Moderate, ``>= 9`` High.
     """
-    if score < 9:
+    if score < 6:
         return "Low"
-    if score < 18:
+    if score < 9:
         return "Moderate"
     return "High"

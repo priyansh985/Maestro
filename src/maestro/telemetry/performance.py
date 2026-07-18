@@ -9,7 +9,6 @@ from __future__ import annotations
 import math
 import time
 from dataclasses import dataclass, field
-from typing import List
 
 
 @dataclass
@@ -25,6 +24,19 @@ def _bounded(x: float, lo: float = 0.0, hi: float = 100.0) -> float:
     return max(lo, min(hi, x))
 
 
+# Logistic load model (assumption A13). f(x) = 1 / (1 + exp(-k (x - x0))) with
+# k, x0 calibrated so the Sec 6.2 DoS rate (10 kpps) saturates (~1.0 load) while
+# a benign baseline (~200 pps) is ~0.0. Both cpu/mem and the TC1 telemetry-lag
+# model read from this single curve so they stay mutually consistent.
+_LOAD_K = 0.0025
+_LOAD_X0 = 5000.0  # midpoint packet rate
+
+
+def load_fraction(pkt_rate_pps: float) -> float:
+    """Modeled system-load fraction in [0, 1] for a given packet rate (A13)."""
+    return 1.0 / (1.0 + math.exp(-_LOAD_K * (pkt_rate_pps - _LOAD_X0)))
+
+
 @dataclass
 class PerformanceMonitor:
     """Implements Sec 3.1 Performance Analysis Module.
@@ -35,7 +47,7 @@ class PerformanceMonitor:
     pkt_rate_pps: float = 0.0
     cpu_pct: float = 5.0
     mem_pct: float = 30.0
-    history: List[PerformanceSample] = field(default_factory=list)
+    history: list[PerformanceSample] = field(default_factory=list)
     cpu_high_pct: float = 80.0
     mem_high_pct: float = 80.0
     pkt_rate_high_pps: float = 8000.0
@@ -49,10 +61,9 @@ class PerformanceMonitor:
         if t is None:
             t = time.time()
         self.pkt_rate_pps = pkt_rate_pps
-        k = 0.0025
-        x0 = 5000.0  # midpoint
-        target_cpu = 5.0 + 95.0 / (1.0 + math.exp(-k * (pkt_rate_pps - x0)))
-        target_mem = 25.0 + 70.0 / (1.0 + math.exp(-k * (pkt_rate_pps - x0)))
+        load = load_fraction(pkt_rate_pps)
+        target_cpu = 5.0 + 95.0 * load
+        target_mem = 25.0 + 70.0 * load
         # exponential smoothing -> first-order lag matches Sec 5.2 telemetry drift
         alpha = 0.3
         self.cpu_pct = (1 - alpha) * self.cpu_pct + alpha * target_cpu

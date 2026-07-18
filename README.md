@@ -16,6 +16,33 @@ prototype.
 
 ---
 
+## 0. Overview — what's in this repository
+
+This began as a clean-room paper reproduction and has grown into three layers
+that build on it:
+
+| Layer | What it is | Docs |
+|---|---|---|
+| **1. Paper reproduction** | The 7-layer MAESTRO threat model, `R = P × I × E` risk scoring, and the two validated attacks (TC1 DoS, TC2 memory poisoning). | this README (Stages 1–3) |
+| **2. Model connector system** | A provider-agnostic LLM abstraction (OpenAI, Anthropic, Ollama/local, custom) with graceful fallback, a registry, and a web testing dashboard at **`/playground`**. The agent routes all LLM calls through it. | [`docs/CONNECTORS.md`](docs/CONNECTORS.md) |
+| **3. MAESTRO-SecOps security layer** | The repositioning toward a *security control plane*: an operational residual-risk engine and a Phase-0 "truth audit" that honestly classifies every control as declared/implemented/enforced/tested/verified. | [`docs/SECOPS.md`](docs/SECOPS.md) |
+
+A comparison with other "MAESTRO"-named projects and the full security roadmap
+are in [`MAESTRO_COMPARISON.md`](MAESTRO_COMPARISON.md).
+
+> **Provenance (be precise):** the reproduced work is an **arXiv preprint** —
+> not described here as peer-reviewed unless a named venue is verified. The
+> seven-layer MAESTRO taxonomy is the **Cloud Security Alliance's** framework
+> (Multi-Agent Environment, Security, Threat, Risk & Outcome; Huang, CSA 2025)
+> that the paper *cites and uses* — our L1–L7 are CSA MAESTRO's layers, not an
+> original taxonomy.
+
+**Status:** 166 tests pass · `ruff` + `mypy` clean · reproduce pipeline +
+connector + security suites all green (see §6). Everything works **offline with
+no API key** (deterministic stub default).
+
+---
+
 ## 1. Stage 1 — Planning
 
 ### 1.1 Core contribution (one paragraph)
@@ -77,54 +104,55 @@ follows Sec 4.1 verbatim and lives in `src/maestro/maestro/layers.py`.
 ```text
 .
 ├── configs/
-│   ├── default.yaml          # ALL hyperparameters (no magic numbers in code)
+│   ├── default.yaml          # ALL reproduction hyperparameters (no magic numbers)
 │   ├── ordinal_scale.yaml    # Sec 4.3 Table 3 qualitative -> ordinal mapping
-│   └── threats.yaml          # Table 1 + Table 4 (P,I,E + risk score per threat)
+│   ├── threats.yaml          # Table 1 + Table 4 (P,I,E + risk score per threat)
+│   └── connectors.yaml       # model-connector registry (keys via api_key_env)
 ├── src/maestro/
 │   ├── config.py             # loads OmegaConf YAML
 │   ├── logging_setup.py      # centralised logging
-│   ├── cli.py                # `python -m maestro.cli validate`
-│   ├── maestro/
-│   │   ├── layers.py         # Sec 4.1 L1..L7
-│   │   ├── risk_score.py     # Eq.(1) R = P*I*E + Table 3
+│   ├── cli.py                # console entry points
+│   ├── maestro/              # ── Layer 1: paper reproduction ──
+│   │   ├── layers.py         # Sec 4.1 L1..L7 (CSA MAESTRO)
+│   │   ├── risk_score.py     # Eq.(1) R = P*I*E + Table 3 (legacy score, kept)
 │   │   ├── threats.py        # loader for threats.yaml + Table 1 / Table 4
 │   │   ├── mapping.py        # renders Table 2 + Table 4 as dataframes
 │   │   └── mitigation.py     # Sec 5.1-5.3 mitigation catalogue
-│   ├── telemetry/
-│   │   ├── capture.py        # Sec 3.1 Packet Capture Module
-│   │   ├── performance.py    # Sec 3.1 Performance Analysis (CPU/mem model)
-│   │   └── detection.py      # Sec 3.1 Security Detection Module
+│   ├── telemetry/            # Sec 3.1 capture / performance / detection
 │   ├── agent/
 │   │   ├── memory.py         # Sec 6.3 history.json store + poisoning
 │   │   ├── parameter_tuning.py  # Sec 6.3 capture-duration heuristic
-│   │   ├── reasoning.py      # Sec 3.1 LLM Reasoning Engine (stub + OpenAI)
+│   │   ├── reasoning.py      # StubReasoner + ConnectorReasoner (routes via connector)
 │   │   └── planner.py        # L3 planner + Sec 5.3 L3 validation
-│   ├── server/
-│   │   ├── app.py            # FastAPI + WebSocket backend (Sec 6.1)
-│   │   └── dashboard.py      # HTML dashboard (Sec 3.1 Interactive Dashboard)
-│   ├── experiments/
-│   │   ├── tc1_dos.py        # Sec 6.2 / 6.3 TC1 DoS replay
-│   │   ├── tc2_memory_poison.py  # Sec 6.3 TC2 memory poisoning
-│   │   ├── summary.py        # renders Table 4 + Table 5
-│   │   └── runner.py         # end-to-end reproduce entrypoint
-│   └── scripts/
-│       └── validate_threats.py  # assert threats.yaml == Eq.(1) & Table 4
-├── tests/
-│   ├── conftest.py
-│   ├── test_risk_score.py        # Eq.(1) + Sec 4.3.1 illustrations
-│   ├── test_threats.py           # Table 4 risk scores
-│   ├── test_telemetry.py         # Performance/Detector sanity
-│   ├── test_parameter_tuning.py  # Sec 6.3 34s -> 94s repro
-│   ├── test_planner.py           # Sec 5.3 L3 planner validation
-│   └── test_server.py            # FastAPI /risk + /healthz + WS
-├── results/                  # populated by reproduce(.sh/.bat)
-├── data/pcap                 # GoldenEye PCAP + baseline
-├── data/memory/history.json  # populated by TC2
-├── pyproject.toml            # package + pinned deps
+│   ├── experiments/          # TC1 DoS, TC2 memory poison, summary, runner
+│   ├── scripts/validate_threats.py  # assert threats.yaml == Eq.(1) & Table 4
+│   ├── connectors/           # ── Layer 2: model connector system ──
+│   │   ├── base.py           # ModelConnector, ChatRequest/Response, errors
+│   │   ├── registry.py       # register / enable / disable / resolve
+│   │   ├── fallback.py       # FallbackConnector (graceful degradation)
+│   │   ├── config.py         # build_registry() from configs/connectors.yaml
+│   │   └── providers/        # stub, openai, anthropic, ollama, custom (+SSRF guard)
+│   ├── security/             # ── Layer 3: MAESTRO-SecOps ──
+│   │   ├── risk_engine.py    # operational residual-risk model + risk->action
+│   │   ├── control_status.py # Phase-0 truth audit (declared..verified)
+│   │   └── audit.py          # `maestro-audit` CLI (CI-gating)
+│   └── server/
+│       ├── app.py            # FastAPI + WebSocket backend (Sec 6.1)
+│       ├── dashboard.py      # MAESTRO risk dashboard (Sec 3.1)
+│       ├── connectors_api.py # /api model-testing REST router (opt-in auth)
+│       └── playground.py     # /playground connector testing dashboard
+├── tests/                    # 166 tests: reproduction + connectors + security
+├── docs/
+│   ├── CONNECTORS.md         # connector system: usage, add-a-provider, checklist
+│   └── SECOPS.md             # security control-plane direction + status + roadmap
+├── results/                  # populated by the reproduce pipeline + audit CLI
+├── data/                     # pcap (synthesised) + memory/history.json
+├── .github/workflows/ci.yml  # lint · type · test · validate · reproduce
+├── pyproject.toml            # package + deps + console scripts
 ├── requirements.txt          # pinned versions for `pip install -r`
-├── reproduce.sh              # Linux/mac pipeline
-├── reproduce.bat             # Windows pipeline
-├── Dockerfile                # container build (Sec 6.1 「containerised」)
+├── reproduce.sh / .bat       # Linux/mac + Windows pipelines
+├── Dockerfile / .dockerignore
+├── MAESTRO_COMPARISON.md     # vs other "MAESTRO" projects + security roadmap
 └── README.md
 ```
 
@@ -298,16 +326,85 @@ open http://127.0.0.1:8000
 The endpoint `/risk` returns Table 4 as JSON; `ws /ws` streams
 telemetry/plan/risk per Sec 6.1 WebSocket protocol.
 
-### 3.5 Switching LLM providers (Sec 3.1 LLM Reasoning Engine)
+### 3.4b Model connector system + testing playground
 
-Default is the *deterministic stub* (Assumption A1) so reproduction is
-offline. To enable the OpenAI provider used in the paper's deployment:
+The same server hosts a **provider-agnostic model connector system** and a web
+dashboard to configure, test, log, and verify agent behavior across LLM backends
+(OpenAI, Anthropic, Ollama/local, and custom external providers), online and
+offline. Open the dashboard at **`/playground`**:
 
 ```bash
-export OPENAI_API_KEY=..."
-python -c "from maestro.config import load_config; cfg = load_config(); cfg.llm.provider='openai'; cfg.llm.model='gpt-4o-mini'"
+uvicorn maestro.server.app:app --port 8000
+# → http://127.0.0.1:8000/playground   (dashboard)
+#   http://127.0.0.1:8000/api/...       (REST API)
 ```
-(Or edit `configs/default.yaml`: `llm.provider: openai`.)
+
+It works offline with no API key (deterministic stub is the default). The
+framework routes LLM calls through the connector via `ConnectorReasoner` (no
+direct provider SDK calls). The dashboard lets you register/enable/disable
+connectors, run prompts with live parameter control, compare backends
+side-by-side, log requests with latency/token metrics, tick manual verification
+checkmarks, and save/replay test cases. Full guide, add-a-provider instructions,
+security notes, and the pre-deployment checklist:
+**[`docs/CONNECTORS.md`](docs/CONNECTORS.md)**.
+
+Use it as a library too:
+
+```python
+from maestro.connectors import build_registry, ChatRequest
+r = build_registry().resolve().chat(ChatRequest.of("hello", max_tokens=32))
+print(r.text, r.provider, r.latency_ms, r.usage.total_tokens)
+```
+
+### 3.4c Security control plane (MAESTRO-SecOps)
+
+Run the **Phase-0 truth audit** — it classifies every control as
+declared/implemented/enforced/tested/verified and fails if any control claims
+more than its evidence supports:
+
+```bash
+python -m maestro.security.audit          # or: maestro-audit
+# writes results/control_status.json
+```
+
+The **operational residual-risk engine** (multi-dimensional risk, uncertainty
+penalty, evidence-weighted control effectiveness, residual → runtime decision)
+lives in `maestro.security.risk_engine`; the paper's `R = P × I × E` score is
+preserved separately. Direction, formulas, and roadmap:
+**[`docs/SECOPS.md`](docs/SECOPS.md)**.
+
+### 3.5 Switching LLM providers
+
+Default is the *deterministic stub* (Assumption A1) so reproduction is offline.
+Cloud providers auto-enable when their key env var is set; register a custom
+OpenAI-compatible provider via the dashboard, the API, or `configs/connectors.yaml`.
+
+```bash
+export OPENAI_API_KEY=...          # or ANTHROPIC_API_KEY=...
+python -c "from maestro.connectors import build_registry, ChatRequest; \
+print(build_registry().get('openai').chat(ChatRequest.of('ping', max_tokens=5)).text)"
+```
+
+For local models, run `ollama serve` and enable the `ollama` connector.
+See `docs/CONNECTORS.md` for the paper-style `agent/reasoning.py` provider path.
+
+### 3.6 Console scripts & environment variables
+
+Installed console scripts (from `pyproject.toml`):
+
+| Command | Does |
+|---|---|
+| `maestro-validate` | assert `threats.yaml` == Eq.(1) / Table 4 |
+| `maestro-reproduce` | run TC1 + TC2 + Tables 4/5 into `results/` |
+| `maestro-audit` | Phase-0 control-status truth audit |
+
+Environment variables:
+
+| Variable | Effect |
+|---|---|
+| `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` | auto-enable that cloud connector |
+| `MAESTRO_API_TOKEN` | when set, all `/api` requests require `Authorization: Bearer <token>` (unset = open, local-dev default). **Set this for any deployment beyond localhost.** |
+| `MAESTRO_ALLOW_UNSAFE_HOSTS=1` | disable the SSRF guard that blocks `base_url`s pointing at link-local/metadata/multicast IPs (leave unset in production) |
 
 ---
 
@@ -339,10 +436,17 @@ python -c "from maestro.config import load_config; cfg = load_config(); cfg.llm.
    wire replay may be a no-op; the experiment still exercises the agent
    pipeline by treating the replay as the saturating rate.
 2. **The paper reports telemetry latency qualitatively ("about 13
-   times", "more than 13 seconds")**. Our runner reports both the
-   achieved telemetry interval and the lag ratio; on hosts that survive
-   a `sendp` loop we expect ≈ 13 s, on dry hosts the current run will
-   show ≈ baseline interval — see A12.
+   times", "more than 13 seconds")**. Because no raw numbers are given,
+   TC1 now derives the telemetry-update interval from the single
+   calibrated logistic load curve in `telemetry/performance.py`
+   (assumption A13): a benign rate (~200 pps) maps to the ~7 s baseline
+   and the 10 kpps DoS rate saturates to the ~13 s stressed interval,
+   so the result reproduces deterministically on any host (including
+   Windows/loopback where a real `sendp` replay is a no-op). A
+   best-effort real `tcpreplay`/`sendp` replay is still attempted for
+   fidelity but the reported metric does not depend on it — see A12/A13.
+   *(Previously this figure was keyed off real host CPU and did not
+   reproduce.)*
 3. **No live LLM.** The reasoning engine defaults to a deterministic
    stub (A1). The availability of an OpenAI key does **not** change
    the *security* conclusions because the empirical attacks target L2/L4
@@ -368,26 +472,57 @@ python -c "from maestro.config import load_config; cfg = load_config(); cfg.llm.
 
 ## 6. Verification status
 
-What was verified:
+Verified end-to-end (**166 tests pass**; `ruff` + `mypy` clean; full
+`reproduce.sh`/`reproduce.bat` pipeline green):
 * Eq.(1) implementations match Sec 4.3.1 illustrative numerical
-  examples (`tests/test_risk_score.py`).
+  examples, including the Low/Moderate/High buckets 3 → 8 → 9
+  (`tests/test_risk_score.py`).
 * All 10 threats in `configs/threats.yaml` reproduce Sec 4.3.2 Table 4
-  risk scores exactly (`tests/test_threats.py`,
-  `scripts/validate_threats.py`).
-* Eq.(1) buckets are internally consistent with the 1-27 numeric range.
-* Sec 6.3 memory-poisoning step reproduces the 34 s → post-poison
-  capture-duration inflation arise deterministically
-  (`tests/test_parameter_tuning.py`).
+  risk scores **exactly** — {1:12, 2:9, 3:18, 4:12, 5:12, 6:18, 7:27,
+  8:9, 9:12, 10:18}, Threat 7 highest at 27 (`tests/test_threats.py`,
+  `tests/test_summary.py`, `scripts/validate_threats.py`).
+* **TC1** reproduces the Sec 6.2 telemetry degradation: baseline
+  **7.0 s → modeled 13.0 s** under the 10 kpps flood (lag ratio ≈ 1.86),
+  with the modeled CPU saturating past the 80% anomaly threshold
+  (`results/tc1.json`, `tests/test_experiments.py`).
+* **TC2** reproduces the Sec 6.3 memory-poisoning inflation:
+  **34.0 s → 94.0 s** capture duration (ratio ≈ 2.76) after injecting
+  20 fake high-severity entries (`results/tc2.json`,
+  `tests/test_experiments.py`, `tests/test_parameter_tuning.py`).
 * FastAPI endpoints `/`, `/risk`, `/healthz` and the `/ws` WebSocket
-  exist (`tests/test_server.py`).
+  serve correctly under both `TestClient` and a live `uvicorn`
+  (`tests/test_server.py`).
 * Sec 5.3 L3 planner validation rejects disallowed actions when
   toggled on (`tests/test_planner.py`).
+* MAESTRO layers, threat→layer mapping and the per-layer mitigation
+  catalogue cover all of L1..L7 (`tests/test_mapping_layers.py`).
+* **Model connector system** — the OpenAI / Anthropic / Ollama / custom
+  providers, `FallbackConnector`, `ConnectorRegistry` and the
+  `/api/*` + `/playground` web interface are exercised fully **offline**
+  via `httpx.MockTransport` (wire-format, auth headers, error mapping,
+  health-gated failover, streaming shapes) — `tests/test_connectors_*.py`,
+  `tests/test_connectors_api.py`.
+* **Security layer** — the operational residual-risk engine
+  (`R = f(likelihood, impact, exposure, …)` with the TC2 worked example),
+  the Phase-0 control-status truth audit (`maestro-audit`; invariants
+  reject "tested/verified while default-off"), the SSRF guard on
+  connector `base_url` and the optional bearer-token API auth are all
+  covered (`tests/test_risk_engine.py`, `tests/test_control_status.py`,
+  `tests/test_connectors_security.py`). Auth + SSRF were additionally
+  **live-verified** against a real `uvicorn`: 401 without a token, 200
+  with the correct token, metadata-IP `base_url` → 400.
 
 What is a reproduction risk and was **not** verified end-to-end:
-* The exact Sec 6.2 telemetry-lag ratio (~13×) — this depends on real
-  PCAP replay at 10 kpps on a suitable interface (A11/A10).
+* The *absolute* Sec 6.2 telemetry interval on real hardware — the ~13 s
+  figure is modeled per A13, not measured from a live 10 kpps wire
+  replay (A10/A11).
 * CPU/mem saturation curves are modelled, not measured (A13).
-* The OpenAI-backed reasoning path (assumption A1).
+* The OpenAI-backed reasoning path (assumption A1) and the live
+  Anthropic/Ollama wire calls — all provider tests run offline against
+  `httpx.MockTransport`; no request leaves the host in CI.
+* The `Dockerfile` image build (Docker was not installed on the
+  authoring machine); the `.dockerignore` and build steps are provided
+  but the built image has not been smoke-tested here.
 
 To regenerate everything from scratch:
 ```bash

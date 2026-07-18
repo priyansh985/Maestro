@@ -7,8 +7,7 @@ defense-off conditions.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Dict, List
+from dataclasses import dataclass
 
 from .layers import LAYERS
 
@@ -26,7 +25,7 @@ class PyObject:
     pass
 
 
-MITIGATIONS: Dict[str, List[Mitigation]] = {
+MITIGATIONS: dict[str, list[Mitigation]] = {
     "L1": [
         Mitigation("L1", "Guardrails + fine-tuning constraints",
                    "Filter prompt/response to block unsafe reasoning chains (Sec 5.3 L1)"),
@@ -74,9 +73,9 @@ MITIGATIONS: Dict[str, List[Mitigation]] = {
 }
 
 
-def defenses_for_layer(code: str) -> List[Mitigation]:
+def defenses_for_layer(code: str) -> list[Mitigation]:
     return MITIGATIONS.get(code, [])
 
 
-def all_defenses() -> Dict[str, List[Mitigation]]:
+def all_defenses() -> dict[str, list[Mitigation]]:
     return {li.code: MITIGATIONS.get(li.code, []) for li in LAYERS}

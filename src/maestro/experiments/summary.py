@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Dict, List
 
 import pandas as pd
 
@@ -60,7 +59,7 @@ def table_5_dataframe(tc1: TC1Result, tc2: TC2Result) -> pd.DataFrame:
 
 
 def write_repo_tables(out_dir: str | Path,
-                      table4: pd.DataFrame, table5: pd.DataFrame) -> Dict[str, Path]:
+                      table4: pd.DataFrame, table5: pd.DataFrame) -> dict[str, Path]:
     """Write Sec 4 Table 4 + Sec 6 Table 5 as CSV + Markdown."""
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)

@@ -23,9 +23,10 @@ if [[ -x .venv/Scripts/python.exe ]]; then PY=".venv/Scripts/python.exe"; fi
 
 if [[ "${SKIP_INSTALL:-0}" != "1" ]]; then
   echo "[reproduce] creating venv in .venv ..."
-  "$PYTHON" -m venv .venv || true
-  if [[ -x .venv/Scripts/pip ]]; then .venv/Scripts/pip install --upgrade pip; else .venv/bin/pip install --upgrade pip; fi
-  if [[ -x .venv/Scripts/pip ]]; then .venv/Scripts/pip install -e ".[dev]"; else .venv/bin/pip install -e ".[dev]"; fi
+  "${PYTHON:-python}" -m venv .venv || true
+  if [[ -x .venv/Scripts/python.exe ]]; then PY=".venv/Scripts/python.exe"; else PY=".venv/bin/python"; fi
+  "$PY" -m pip install --upgrade pip
+  "$PY" -m pip install -e ".[dev]"
 fi
 
 mkdir -p data/pcap data/memory results

@@ -5,9 +5,7 @@ Used by :mod:`maestro.experiments.runner` to emit Table 2 + Table 4 from
 """
 from __future__ import annotations
 
-from typing import Dict, List
-
-from .layers import LAYERS, LayerInfo
+from .layers import LAYERS
 from .threats import Threat
 
 
@@ -19,9 +17,9 @@ def layer_name(code: str) -> str:
     return code
 
 
-def threat_to_layers(threats: List[Threat]) -> List[Dict[str, object]]:
+def threat_to_layers(threats: list[Threat]) -> list[dict[str, object]]:
     """Render rows identical to Table 2 of Sec 4.2."""
-    rows: List[Dict[str, object]] = []
+    rows: list[dict[str, object]] = []
     for t in threats:
         rows.append({
             "Threat": f"{t.id}. {t.name}",
@@ -32,9 +30,9 @@ def threat_to_layers(threats: List[Threat]) -> List[Dict[str, object]]:
     return rows
 
 
-def threat_risk_matrix(threats: List[Threat]) -> List[Dict[str, object]]:
+def threat_risk_matrix(threats: list[Threat]) -> list[dict[str, object]]:
     """Render Table 4 of Sec 4.3.2."""
-    rows: List[Dict[str, object]] = []
+    rows: list[dict[str, object]] = []
     for t in threats:
         rows.append({
             "Threat": f"{t.id}. {t.name}",

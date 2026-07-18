@@ -7,14 +7,12 @@ from __future__ import annotations
 import logging
 import sys
 from pathlib import Path
-from typing import Optional
-
 
 _CONFIGURED: dict[str, logging.Logger] = {}
 
 
 def get_logger(name: str = "maestro", level: str = "INFO",
-               log_file: Optional[str | Path] = None) -> logging.Logger:
+               log_file: str | Path | None = None) -> logging.Logger:
     if name in _CONFIGURED:
         return _CONFIGURED[name]
     logger = logging.getLogger(name)

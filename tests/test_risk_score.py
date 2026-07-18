@@ -4,8 +4,12 @@ from __future__ import annotations
 import pytest
 
 from maestro.maestro.risk_score import (
-    parse_risk, qualitative_to_ordinal, risk_score, risk_score_components,
-    RiskComponents)
+    RiskComponents,
+    parse_risk,
+    qualitative_to_ordinal,
+    risk_score,
+    risk_score_components,
+)
 
 
 def test_ordinal_table3():
@@ -29,8 +33,9 @@ def test_eq1_dataclass():
 
 
 def test_parse_risk_buckets_sec431():
+    # Sec 4.3.1 anchor points: 3 = low, 8 = moderate, 9 = high priority.
     assert parse_risk(3) == "Low"
     assert parse_risk(8) == "Moderate"
-    assert parse_risk(9) == "Moderate"
+    assert parse_risk(9) == "High"
     assert parse_risk(18) == "High"
     assert parse_risk(27) == "High"

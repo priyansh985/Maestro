@@ -4,8 +4,8 @@ from __future__ import annotations
 import pytest
 
 from maestro.agent.memory import AgentMemory
-from maestro.agent.planner import DEFAULT_ALLOWED_ACTIONS, Planner
 from maestro.agent.parameter_tuning import ParameterTuning
+from maestro.agent.planner import DEFAULT_ALLOWED_ACTIONS, Planner
 from maestro.agent.reasoning import StubReasoner
 from maestro.telemetry.detection import SecurityDetector
 from maestro.telemetry.performance import PerformanceMonitor

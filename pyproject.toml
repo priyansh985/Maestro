@@ -16,14 +16,13 @@ dependencies = [
     "uvicorn[standard]>=0.29,<0.33",
     "websockets>=12,<14",
     "pydantic>=2.6,<2.11",
-    "pydantic-ai>=0.0.13,<0.0.31",
     "scapy>=2.5,<2.7",
     "psutil>=5.9,<6.2",
     "omegaconf>=2.3,<2.4",
     "pyyaml>=6,<6.3",
     "rich>=13,<14",
-    "matplotlib>=3.8,<3.11",
     "pandas>=2.2,<2.4",
+    "tabulate>=0.9,<0.10",
     "numpy>=1.26,<2.3",
     "httpx>=0.27,<0.29",
     "jinja2>=3.1,<4",
@@ -31,7 +30,11 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-openai = ["openai>=1.30,<1.60"]
+# Real LLM providers (Assumption A1/A2 - the default reproduction uses the
+# offline deterministic stub and needs neither of these).
+openai = ["openai>=1.65.1"]
+agent = ["pydantic-ai>=0.0.30"]
+viz = ["matplotlib>=3.8,<3.11"]
 dev = [
     "pytest>=8,<9",
     "pytest-asyncio>=0.23,<0.25",
@@ -41,16 +44,27 @@ dev = [
     "types-psutil",
 ]
 
+[project.scripts]
+maestro-validate = "maestro.cli:cli_validate"
+maestro-reproduce = "maestro.experiments.runner:main"
+maestro-audit = "maestro.security.audit:main"
+
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+maestro = ["py.typed"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
 
 [tool.ruff]
 line-length = 100
 target-version = "py310"
+
+[tool.ruff.lint]
 extend-select = ["I", "UP", "B", "SIM", "C4"]
 
 [tool.ruff.lint.per-file-ignores]

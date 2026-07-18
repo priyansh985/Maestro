@@ -8,7 +8,6 @@ this module to attach to a real interface (Sec 3.1 first sentence).
 from __future__ import annotations
 
 import logging
-import time
 from dataclasses import dataclass, field
 
 logger = logging.getLogger("maestro.capture")

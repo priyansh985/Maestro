@@ -1,0 +1,47 @@
+name: CI
+
+on:
+  push:
+    branches: [main, development]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: lint · type · test (py${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: Install libpcap (scapy runtime)
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libpcap-dev
+
+      - name: Install package
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Validate threats against Eq.(1) / Table 4
+        run: python -m maestro.scripts.validate_threats
+
+      - name: Ruff lint
+        run: ruff check .
+
+      - name: Mypy type check
+        run: mypy src
+
+      - name: Pytest
+        run: pytest -q
+
+      - name: Reproduce (TC1 + TC2 + tables)
+        run: python -m maestro.experiments.runner

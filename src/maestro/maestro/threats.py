@@ -8,12 +8,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import List, Optional
+from typing import cast
 
 from omegaconf import DictConfig, OmegaConf
 
 from ..config import _REPO_ROOT
-from .risk_score import RiskComponents, risk_score
+from .risk_score import RiskComponents, risk_score_components
 
 
 @dataclass
@@ -22,14 +22,14 @@ class Threat:
     id: int
     name: str
     primary_layer: str
-    cross_layers: List[str]
+    cross_layers: list[str]
     likelihood: str
     impact: str
     exploitability: str
     risk_score: int
-    table1_name: Optional[str] = None
-    table1_example: Optional[str] = None
-    table1_layers: List[str] = field(default_factory=list)
+    table1_name: str | None = None
+    table1_example: str | None = None
+    table1_layers: list[str] = field(default_factory=list)
 
     def components(self) -> RiskComponents:
         return RiskComponents(
@@ -39,11 +39,11 @@ class Threat:
         )
 
 
-def load_threats(path: Optional[str | Path] = None) -> List[Threat]:
+def load_threats(path: str | Path | None = None) -> list[Threat]:
     """Load threats from ``configs/threats.yaml``."""
     p = Path(path) if path is not None else _REPO_ROOT / "configs" / "threats.yaml"
-    cfg: DictConfig = OmegaConf.load(p)
-    out: List[Threat] = []
+    cfg = cast(DictConfig, OmegaConf.load(p))
+    out: list[Threat] = []
     for entry in cfg["threats"]:
         t = Threat(
             id=int(entry["id"]),
@@ -58,7 +58,7 @@ def load_threats(path: Optional[str | Path] = None) -> List[Threat]:
             table1_example=entry.get("table1_example"),
             table1_layers=list(entry.get("table1_layers", [])),
         )
-        expected = risk_score(t.likelihood, t.impact, t.exploitability)
+        expected = risk_score_components(t.components())
         if expected != t.risk_score:
             raise ValueError(
                 f"Threat {t.id} ({t.name}) risk_score {t.risk_score} != {expected} "
@@ -69,7 +69,7 @@ def load_threats(path: Optional[str | Path] = None) -> List[Threat]:
     return out
 
 
-def threat_by_id(threats: List[Threat], tid: int) -> Threat:
+def threat_by_id(threats: list[Threat], tid: int) -> Threat:
     for t in threats:
         if t.id == tid:
             return t

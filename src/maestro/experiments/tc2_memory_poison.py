@@ -7,9 +7,7 @@ causing a larger PCAP and resource exhaustion downstream (Sec 6.3).
 from __future__ import annotations
 
 import logging
-import time
 from dataclasses import dataclass, field
-from typing import List
 
 from ..agent.memory import AgentMemory
 from ..agent.parameter_tuning import ParameterTuning
@@ -25,7 +23,7 @@ class TC2Result:
     n_post_high_severity: int
     baseline_capture_duration_s: float
     post_capture_duration_s: float
-    notes: List[str] = field(default_factory=list)
+    notes: list[str] = field(default_factory=list)
 
     def as_dict(self) -> dict:
         return {
@@ -52,6 +50,12 @@ def run_tc2(cfg) -> TC2Result:
 
     memory = AgentMemory(hist_path)
     memory.load()
+    # The TC2 premise (Sec 6.3) is a *clean* episodic memory that yields the
+    # 34 s baseline capture ("valid entries or no recordings ... e.g. 34
+    # seconds"). Reset first so the measured baseline is deterministic and
+    # isolated from any telemetry the agent may have logged into the shared
+    # history.json during a prior experiment (e.g. TC1 alerts).
+    memory.clear()
     # baseline
     n_baseline = memory.poisoned_count(high_sev)
     tuning = ParameterTuning(memory,

@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import json
-import os
 from pathlib import Path
 
 import pytest
@@ -44,8 +43,8 @@ def test_after_poison_20_entries_sec63(tmp_path):
     assert cap.duration_s == pytest.approx(94.0)
 
 
-def test_max_duration_clamps():
-    p = Path("/tmp/none.json")
+def test_max_duration_clamps(tmp_path):
+    p = tmp_path / "none.json"
     m = AgentMemory(p)
     m.load()
     m.insert_poisoned_entries(n=20, severity=0.95)
@@ -61,6 +60,7 @@ def test_high_severity_threshold_filters_lows(tmp_path):
     # 5 low + 3 high
     m.entries = []
     import time as _t
+
     from maestro.agent.memory import HistoryEntry
     for _ in range(5):
         m.entries.append(HistoryEntry(ts=_t.time(), severity=0.2, alert_class="x", detail=""))

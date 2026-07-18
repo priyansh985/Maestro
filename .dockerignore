@@ -1,0 +1,24 @@
+# Virtualenvs
+.venv/
+venv2/
+**/__pycache__/
+*.pyc
+
+# VCS + tooling caches
+.git/
+.github/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.freebuff/
+
+# Repro outputs + local data (regenerated inside the container)
+results/*
+!results/.gitkeep
+data/pcap/*.pcap
+data/memory/*.json
+
+# Large / non-source artifacts
+*.pdf
+uv.lock
+*.egg-info/

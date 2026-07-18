@@ -1,0 +1,48 @@
+# Model-connector registry (see docs/CONNECTORS.md).
+#
+# API keys are referenced by environment-variable name via `api_key_env` and
+# are never stored in this file. A connector that needs a key but has none
+# available at load time is registered *disabled* — it appears in the dashboard
+# but won't be used for a live call until configured.
+#
+# `default` (top level) names the connector used when a call doesn't specify
+# one. It defaults to the deterministic offline stub so the system works with
+# no configuration and no network.
+
+default: stub
+
+connectors:
+  # Deterministic, offline — always available, no key required.
+  - name: stub
+    provider: stub
+    model: stub-1
+
+  # Local model inference (offline). Enable once an Ollama server is running.
+  - name: ollama
+    provider: ollama
+    model: llama3
+    base_url: http://localhost:11434
+    enabled: false
+
+  # OpenAI cloud API. Enabled automatically when OPENAI_API_KEY is set.
+  - name: openai
+    provider: openai
+    model: gpt-4o-mini
+    base_url: https://api.openai.com/v1
+    api_key_env: OPENAI_API_KEY
+
+  # Anthropic cloud API. Enabled automatically when ANTHROPIC_API_KEY is set.
+  - name: anthropic
+    provider: anthropic
+    model: claude-opus-4-8
+    base_url: https://api.anthropic.com
+    api_key_env: ANTHROPIC_API_KEY
+
+  # Example custom / external OpenAI-compatible provider (disabled by default).
+  # Register your own with any base_url + auth header (see docs/CONNECTORS.md).
+  # - name: my-provider
+  #   provider: custom
+  #   model: my-model
+  #   base_url: https://api.example.com/v1
+  #   api_key_env: MY_PROVIDER_KEY
+  #   auth_header: authorization   # or e.g. x-api-key

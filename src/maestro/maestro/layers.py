@@ -14,9 +14,8 @@ tests can validate the layer set without spinning up the server.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
-from typing import List, Tuple
 
 
 class Layer(str, Enum):
@@ -38,11 +37,11 @@ class LayerInfo:
     role: str            # Sec 4.1 description (paraphrased)
 
     @classmethod
-    def all_layers(cls) -> Tuple["LayerInfo", ...]:
+    def all_layers(cls) -> tuple[LayerInfo, ...]:
         return LAYERS
 
 
-LAYERS: Tuple[LayerInfo, ...] = (
+LAYERS: tuple[LayerInfo, ...] = (
     LayerInfo("L1", "Foundation Models",
               "Pre-trained LLM performing inference on traffic + performance anomalies (L1, Sec 4.1)"),
     LayerInfo("L2", "Data Operations",

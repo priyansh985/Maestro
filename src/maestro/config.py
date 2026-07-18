@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from omegaconf import DictConfig, OmegaConf
 
@@ -25,8 +25,7 @@ def load_config(path: str | os.PathLike[str] | None = None) -> DictConfig:
         Optional override. Defaults to ``configs/default.yaml``.
     """
     cfg_path = Path(path) if path is not None else _DEFAULT_CONFIG
-    cfg: DictConfig = OmegaConf.load(cfg_path)
-    return cfg
+    return cast(DictConfig, OmegaConf.load(cfg_path))
 
 
 def cfg_get(cfg: DictConfig, key: str, default: Any = None) -> Any:
