@@ -10,9 +10,23 @@ The first, self-contained slices of the security control plane (see
 * :mod:`~maestro.security.control_status` — the Phase-0 truth audit: an honest
   declared/implemented/enforced/tested/verified classification of every control
   the repo has, with a build-gating consistency invariant.
+* **Enforcement Plane** (the "LLM proposes, an independent gateway authorizes"
+  keystone): :mod:`~maestro.security.action` (typed proposals),
+  :mod:`~maestro.security.identity` (scoped capability tokens),
+  :mod:`~maestro.security.ledger` (tamper-evident audit log), and
+  :mod:`~maestro.security.enforcement` (the policy enforcement point).
 """
 from __future__ import annotations
 
+from .action import ActionProposal, InvalidProposal, parse_proposal
+from .budget import AutonomyBudget, BudgetError
+from .circuit_breaker import CircuitBreaker
+from .confidence import (
+    ConfidenceBand,
+    ConfidenceSignals,
+    action_confidence,
+    confidence_band,
+)
 from .control_status import (
     CONTROLS,
     Control,
@@ -22,6 +36,20 @@ from .control_status import (
     to_report,
     write_report,
 )
+from .enforcement import (
+    POLICY_DIGEST,
+    ActionState,
+    EnforcementResult,
+    PolicyEnforcementPoint,
+)
+from .identity import (
+    CapabilityError,
+    CapabilityIssuer,
+    CapabilityToken,
+    WorkloadIdentity,
+)
+from .ledger import AuditEvent, Ledger
+from .metrics import compute_metrics
 from .risk_engine import (
     CAPABILITY_REQUIRED_ACTIONS,
     Decision,
@@ -61,4 +89,26 @@ __all__ = [
     "coverage_summary",
     "to_report",
     "write_report",
+    # enforcement plane
+    "ActionProposal",
+    "InvalidProposal",
+    "parse_proposal",
+    "WorkloadIdentity",
+    "CapabilityToken",
+    "CapabilityIssuer",
+    "CapabilityError",
+    "Ledger",
+    "AuditEvent",
+    "PolicyEnforcementPoint",
+    "EnforcementResult",
+    "ActionState",
+    "POLICY_DIGEST",
+    "AutonomyBudget",
+    "BudgetError",
+    "CircuitBreaker",
+    "ConfidenceSignals",
+    "ConfidenceBand",
+    "action_confidence",
+    "confidence_band",
+    "compute_metrics",
 ]

@@ -8,6 +8,7 @@ from maestro.security.control_status import (
     Control,
     Status,
     audit_invariants,
+    boundary_enforced,
     coverage_summary,
     to_report,
     write_report,
@@ -39,6 +40,19 @@ def test_no_control_claims_enforced_while_disabled():
     for c in CONTROLS:
         if c.status == Status.ENFORCED:
             assert c.default_state != "disabled"
+
+
+def test_boundary_enforced_controls_run_on_the_live_loop():
+    # The keystone claim: some controls now gate a real side effect on the
+    # AgentPlatform path, so boundary enforcement is no longer zero.
+    boundary = boundary_enforced(CONTROLS)
+    assert boundary, "expected at least one control enforced at the side-effect boundary"
+    for c in boundary:
+        assert c.enforcement_point and "agent_platform" in c.enforcement_point
+        # Anything at the boundary is, by the ladder, enforced-or-above and on.
+        assert c.default_state != "disabled"
+    cov = coverage_summary(CONTROLS)
+    assert cov["boundary_enforced"] == len(boundary)
 
 
 def test_invariant_flags_tested_without_test_id():

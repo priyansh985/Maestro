@@ -28,7 +28,8 @@ def main() -> int:
     print(f"  by status: {cov['by_status']}")
     print(f"  enforced+tested+ (default-on, proven): {cov['enforced_or_above']}/{cov['total']} "
           f"(ratio {cov['enforcement_ratio']})")
-    print("  side-effect-boundary security enforcement: 0 (executor gateway is Phase 2)")
+    print(f"  side-effect-boundary enforcement (live AgentPlatform loop): "
+          f"{cov['boundary_enforced']}")
     print(f"  report: {path}")
 
     print("\n  id            layer  status        default   control")
