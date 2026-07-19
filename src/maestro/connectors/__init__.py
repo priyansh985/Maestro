@@ -24,6 +24,12 @@ from .base import (
 )
 from .config import build_registry, default_registry
 from .fallback import FallbackConnector
+from .moa import MixtureOfAgents, MoAResult, moa_recommended
+from .policy_fallback import (
+    PolicyAwareFallback,
+    PolicyDegradationRefused,
+    TieredConnector,
+)
 from .providers import (
     AnthropicConnector,
     CustomConnector,
@@ -32,6 +38,7 @@ from .providers import (
     StubConnector,
 )
 from .registry import PROVIDER_CLASSES, ConnectorRegistry
+from .routing import LatencyAwareRouter, LatencyTracker
 
 __all__ = [
     # base
@@ -62,4 +69,13 @@ __all__ = [
     "PROVIDER_CLASSES",
     "build_registry",
     "default_registry",
+    # multi-model routing / resilience (§6)
+    "LatencyAwareRouter",
+    "LatencyTracker",
+    "PolicyAwareFallback",
+    "PolicyDegradationRefused",
+    "TieredConnector",
+    "MixtureOfAgents",
+    "MoAResult",
+    "moa_recommended",
 ]
