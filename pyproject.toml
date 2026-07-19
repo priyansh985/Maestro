@@ -48,6 +48,7 @@ dev = [
 maestro-validate = "maestro.cli:cli_validate"
 maestro-reproduce = "maestro.experiments.runner:main"
 maestro-audit = "maestro.security.audit:main"
+maestro-agent = "maestro.platform.demo:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

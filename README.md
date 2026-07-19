@@ -25,10 +25,13 @@ that build on it:
 |---|---|---|
 | **1. Paper reproduction** | The 7-layer MAESTRO threat model, `R = P × I × E` risk scoring, and the two validated attacks (TC1 DoS, TC2 memory poisoning). | this README (Stages 1–3) |
 | **2. Model connector system** | A provider-agnostic LLM abstraction (OpenAI, Anthropic, Ollama/local, custom) with graceful fallback, a registry, and a web testing dashboard at **`/playground`**. The agent routes all LLM calls through it. | [`docs/CONNECTORS.md`](docs/CONNECTORS.md) |
-| **3. MAESTRO-SecOps security layer** | The repositioning toward a *security control plane*: an operational residual-risk engine and a Phase-0 "truth audit" that honestly classifies every control as declared/implemented/enforced/tested/verified. | [`docs/SECOPS.md`](docs/SECOPS.md) |
+| **3. MAESTRO-SecOps security layer** | The repositioning toward a *security control plane*: an operational residual-risk engine, an **Enforcement Plane** (typed action schema, capability tokens, executor gateway, tamper-evident ledger), and a Phase-0 "truth audit" that honestly classifies every control as declared/implemented/enforced/tested/verified. | [`docs/SECOPS.md`](docs/SECOPS.md) |
+| **4. Agent platform (live loop)** | The keystone: `AgentPlatform` wires the reasoner through the Enforcement Plane so a model can only *propose* — deterministic services authorize, execute, verify, and record. Try it offline with **`maestro-agent`**. | [`docs/BLUEPRINT.md`](docs/BLUEPRINT.md) |
 
 A comparison with other "MAESTRO"-named projects and the full security roadmap
-are in [`MAESTRO_COMPARISON.md`](MAESTRO_COMPARISON.md).
+are in [`MAESTRO_COMPARISON.md`](MAESTRO_COMPARISON.md). The end-to-end platform
+architecture — grounded in the code above, with the six corrected design choices
+flagged — is in [`docs/BLUEPRINT.md`](docs/BLUEPRINT.md).
 
 > **Provenance (be precise):** the reproduced work is an **arXiv preprint** —
 > not described here as peer-reviewed unless a named venue is verified. The
@@ -37,9 +40,9 @@ are in [`MAESTRO_COMPARISON.md`](MAESTRO_COMPARISON.md).
 > that the paper *cites and uses* — our L1–L7 are CSA MAESTRO's layers, not an
 > original taxonomy.
 
-**Status:** 166 tests pass · `ruff` + `mypy` clean · reproduce pipeline +
-connector + security suites all green (see §6). Everything works **offline with
-no API key** (deterministic stub default).
+**Status:** 333 tests pass · `ruff` + `mypy` clean · reproduce pipeline +
+connector + security + platform + memory + orchestration + critique + domains
+suites all green (see §6). Everything works **offline with no API key** (deterministic stub default).
 
 ---
 
@@ -126,25 +129,56 @@ follows Sec 4.1 verbatim and lives in `src/maestro/maestro/layers.py`.
 │   │   └── planner.py        # L3 planner + Sec 5.3 L3 validation
 │   ├── experiments/          # TC1 DoS, TC2 memory poison, summary, runner
 │   ├── scripts/validate_threats.py  # assert threats.yaml == Eq.(1) & Table 4
-│   ├── connectors/           # ── Layer 2: model connector system ──
+│   ├── connectors/           # ── Layer 2: model connector system (PAL) ──
 │   │   ├── base.py           # ModelConnector, ChatRequest/Response, errors
 │   │   ├── registry.py       # register / enable / disable / resolve
 │   │   ├── fallback.py       # FallbackConnector (graceful degradation)
+│   │   ├── routing.py        # latency-aware routing (lowest-p95 healthy connector)
+│   │   ├── policy_fallback.py # policy-aware fallback (fail-closed, no silent downgrade)
+│   │   ├── moa.py            # Mixture-of-Agents (disagreement = uncertainty signal)
 │   │   ├── config.py         # build_registry() from configs/connectors.yaml
 │   │   └── providers/        # stub, openai, anthropic, ollama, custom (+SSRF guard)
 │   ├── security/             # ── Layer 3: MAESTRO-SecOps ──
 │   │   ├── risk_engine.py    # operational residual-risk model + risk->action
 │   │   ├── control_status.py # Phase-0 truth audit (declared..verified)
-│   │   └── audit.py          # `maestro-audit` CLI (CI-gating)
+│   │   ├── audit.py          # `maestro-audit` CLI (CI-gating)
+│   │   ├── action.py         # typed action-proposal schema (LLM proposes only)
+│   │   ├── identity.py       # signed, scoped, short-lived capability tokens
+│   │   ├── ledger.py         # tamper-evident hash-chained + HMAC audit ledger
+│   │   ├── confidence.py     # action confidence from independent signals
+│   │   ├── budget.py         # autonomy budget + rate limiting
+│   │   ├── circuit_breaker.py # runaway-loop detection
+│   │   ├── metrics.py        # operational metrics derived from the ledger
+│   │   └── enforcement.py    # PolicyEnforcementPoint — the executor gateway
+│   ├── memory/               # ── Phase 3: four-tier memory (integrity) ──
+│   │   ├── records.py        # MemoryScope + tier + trust-labeled record
+│   │   └── store.py          # quarantine-on-ingest, capability-gated promotion, isolation
+│   ├── critique/             # ── HMDC evaluation (blueprint §5) ──
+│   │   ├── guardrails.py     # Stage 1: deterministic gate (dispositive)
+│   │   ├── embedding.py      # Stage 2: offline lexical embedder + cosine
+│   │   ├── judge.py          # Stage 3: cross-family RubricJudge (verbosity-normalized)
+│   │   └── engine.py         # Stage 4: variance-aware ensemble (+ §7 task_gate)
+│   ├── domains/              # ── Cross-domain packs (blueprint §7) ──
+│   │   ├── verifiers.py      # environmental verifiers: tests / reconcile / cite / safety
+│   │   └── packs.py          # DomainPack: reasoning pattern + verifier + autonomy envelope
+│   ├── orchestration/        # ── durable execution (Temporal-semantics, offline) ──
+│   │   ├── journal.py        # event-sourced activity journal (replay source)
+│   │   └── engine.py         # DurableEngine: exactly-once across crashes, retries, timeouts
+│   ├── platform/             # ── the live control loop (keystone) ──
+│   │   ├── agent_platform.py # AgentPlatform: reason → propose → gateway → execute
+│   │   ├── blast_radius.py   # BlastRadius: one-screen enumeration of an agent's reach
+│   │   ├── provisioning.py   # secure-by-inheritance agent provisioning (PolicyEnvelope)
+│   │   └── demo.py           # `maestro-agent` offline enforcement-loop demo
 │   └── server/
 │       ├── app.py            # FastAPI + WebSocket backend (Sec 6.1)
 │       ├── dashboard.py      # MAESTRO risk dashboard (Sec 3.1)
 │       ├── connectors_api.py # /api model-testing REST router (opt-in auth)
 │       └── playground.py     # /playground connector testing dashboard
-├── tests/                    # 166 tests: reproduction + connectors + security
+├── tests/                    # 333 tests: reproduction + connectors + security + platform + memory + orchestration + critique + domains
 ├── docs/
 │   ├── CONNECTORS.md         # connector system: usage, add-a-provider, checklist
-│   └── SECOPS.md             # security control-plane direction + status + roadmap
+│   ├── SECOPS.md             # security control-plane direction + status + roadmap
+│   └── BLUEPRINT.md          # end-to-end platform architecture (corrections flagged)
 ├── results/                  # populated by the reproduce pipeline + audit CLI
 ├── data/                     # pcap (synthesised) + memory/history.json
 ├── .github/workflows/ci.yml  # lint · type · test · validate · reproduce
@@ -397,6 +431,7 @@ Installed console scripts (from `pyproject.toml`):
 | `maestro-validate` | assert `threats.yaml` == Eq.(1) / Table 4 |
 | `maestro-reproduce` | run TC1 + TC2 + Tables 4/5 into `results/` |
 | `maestro-audit` | Phase-0 control-status truth audit |
+| `maestro-agent` | offline demo of the live enforcement loop (`AgentPlatform`) |
 
 Environment variables:
 
@@ -405,6 +440,7 @@ Environment variables:
 | `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` | auto-enable that cloud connector |
 | `MAESTRO_API_TOKEN` | when set, all `/api` requests require `Authorization: Bearer <token>` (unset = open, local-dev default). **Set this for any deployment beyond localhost.** |
 | `MAESTRO_ALLOW_UNSAFE_HOSTS=1` | disable the SSRF guard that blocks `base_url`s pointing at link-local/metadata/multicast IPs (leave unset in production) |
+| `MAESTRO_SIGNING_KEY` | HMAC key backing capability tokens + the audit ledger on the `AgentPlatform` path. Unset = an ephemeral per-process key (fine offline; capabilities are process-scoped). **Set a stable secret to verify ledgers/capabilities across restarts.** |
 
 ---
 
@@ -472,7 +508,7 @@ Environment variables:
 
 ## 6. Verification status
 
-Verified end-to-end (**166 tests pass**; `ruff` + `mypy` clean; full
+Verified end-to-end (**333 tests pass**; `ruff` + `mypy` clean; full
 `reproduce.sh`/`reproduce.bat` pipeline green):
 * Eq.(1) implementations match Sec 4.3.1 illustrative numerical
   examples, including the Low/Moderate/High buckets 3 → 8 → 9
@@ -511,6 +547,114 @@ Verified end-to-end (**166 tests pass**; `ruff` + `mypy` clean; full
   `tests/test_connectors_security.py`). Auth + SSRF were additionally
   **live-verified** against a real `uvicorn`: 401 without a token, 200
   with the correct token, metadata-IP `base_url` → 400.
+* **Enforcement Plane** (the "LLM proposes, an independent gateway
+  authorizes a typed action under a valid capability" keystone) — the
+  typed action schema, signed/scoped/short-lived **capability tokens**
+  (forgery/expiry/scope/delegation-cap all tested), the tamper-evident
+  hash-chained **audit ledger** (in-memory + on-disk tamper detection),
+  and the fail-closed **PolicyEnforcementPoint** (evidence check → risk
+  band → capability → approval → allow-listed adapter → audit, plus a
+  kill switch) are adversarially tested in `tests/test_enforcement.py`
+  (36 cases).
+* **Agent platform (live loop)** — `AgentPlatform` wires the reasoner
+  through the Enforcement Plane so a model can only *propose*: it grounds
+  the alert as evidence, assembles a typed proposal (the model does **not**
+  pick scope), derives risk + independent-signal confidence, and submits to
+  the gateway under a capability delegated from the human controller. End
+  to end (`tests/test_platform.py`, 15 cases) a legitimate reversible
+  mitigation is authorized **and executed**, an out-of-scope action is
+  denied at the capability gate, an unknown intent is quarantined by the
+  schema, the kill switch/circuit-breaker/idempotency all bite, and the
+  ledger-derived `unsafe_action_rate` is `0.0` — the proof that nothing
+  bypasses the gateway. This closes the former "component vs. live-loop"
+  gap; the truth audit now grades **10 controls enforced at the side-effect
+  boundary** (`maestro-audit`) — including memory isolation + quarantine-on-
+  ingest, now that evidence is grounded in the scoped memory store. Try it:
+  `maestro-agent`.
+* **Gateway hardening** — the gateway also enforces an **action confidence
+  profile** (from independent signals, not model self-report; raises
+  scrutiny, never authorizes), an **autonomy budget** (tool-call / spend /
+  blast-radius / rate limits), **idempotency** (exactly-once so a retry
+  can't duplicate a side effect), and a **chain-of-thought-free decision
+  card** with an explicit action-lifecycle state — 14 tests in
+  `tests/test_enforcement_hardening.py`.
+* **Operational safety** — a **circuit breaker** halts a runaway loop of
+  identical `(intent, args)` calls, and **operational metrics**
+  (authorization rate, denials-by-stage, unsafe-action rate as a bypass
+  proof, tool-failure rate, ledger integrity) are derived from the
+  tamper-evident ledger rather than self-reported counters — 9 tests in
+  `tests/test_operational_safety.py`.
+* **Memory integrity (Phase 3)** — the four-tier memory store
+  (`maestro/memory/`) makes the reproduction's **TC2 poisoning attack
+  structurally inert**: 20 injected high-severity entries land in
+  **quarantine** on ingest and never surface in recall, so they cannot
+  influence the agent; a quarantined record only becomes trusted under an
+  **independent, scoped `cap:memory:promote` capability**, recorded in the
+  tamper-evident ledger. **Tenant/agent isolation** (row-level-security
+  analog) and **read-only procedural memory** are adversarially tested —
+  cross-tenant recall, cross-scope promotion, and agent writes to the
+  procedural/semantic tiers are all denied. **Cross-tenant access has no
+  autonomous path** (§4.3): it requires an explicit
+  `cap:memory:cross-tenant-read` bound to the target scope and every access is
+  audited — 19 tests in `tests/test_memory_integrity.py`. **Now wired into the
+  live loop**: `AgentPlatform` grounds every authorized action's evidence in a
+  scoped, provenance-tagged memory record and quarantines every detection on
+  ingest, so the TC2 poisoning attack is **inert on the running agent** and the
+  isolation/quarantine controls are graded `tested` (enforced at the boundary) —
+  `tests/test_platform.py`.
+* **Durable execution (Orchestration Engine)** — an offline, deterministic
+  realization of Temporal-style durable workflows (`maestro/orchestration/`):
+  an event-sourced journal replays completed activities after a crash so a
+  side effect runs **exactly once** across process death — proven with a
+  simulated mid-workflow crash (the side effect fires once, not twice) and
+  file-backed cross-process recovery, plus retries/backoff, timeouts, and
+  replay-divergence detection. A **durable agent run** (the PEP as an
+  activity) is shown not to double-execute a mitigation — 10 tests in
+  `tests/test_orchestration.py`. Production would back this with Temporal.io;
+  the in-repo engine keeps the semantics offline and testable.
+* **Blast radius** — `AgentPlatform.blast_radius()` enumerates an agent's
+  bounded reach (capabilities, intent vocabulary, reversible/irreversible
+  split, budget envelope) on one screen; the default agent is shown to hold
+  **only reversible capabilities** — 5 tests in `tests/test_blast_radius.py`.
+* **Secure-by-inheritance provisioning (§4.4)** — `AgentProvisioner` stands up
+  a new agent by instantiating a bounded `PolicyEnvelope` (same tenant, intent
+  vocabulary, budget, TTL as its cohort) under a capability delegated from the
+  controller — **never a fresh permissive default**. Least privilege is
+  structural: a restricted `allowed_intents` narrows the vocabulary and the
+  gateway then **denies** out-of-envelope actions; provisioning is health-gated
+  (an unavailable provider is refused) and audited — 9 tests in
+  `tests/test_provisioning.py`.
+* **HMDC critique (§5)** — the four-stage *gated* evaluator
+  (`maestro/critique/`): deterministic guardrails are **dispositive** (a leaked
+  secret is `REJECT` no matter how good the answer), semantic alignment is a
+  **floor** a high judge score cannot buy back, only **cross-family** judges
+  vote (a same-family judge is excluded → route to human), and the ensemble is
+  **variance-aware** (disagreement routes to a human — no fixed
+  `0.2·semantic + 0.8·judge` weighting). **Verbosity bias** (length-
+  normalization) and **position bias** (both-orders comparison) are actively
+  countered — 12 tests in `tests/test_critique.py`. The offline judge/embedder
+  are deterministic stand-ins for connector-backed cross-family models.
+* **Shadow mode (§5 sandbox tier)** — `AgentPlatform(shadow=True)` runs the
+  full decision pipeline and records every outcome but **withholds the side
+  effect**, so a policy/model can be evaluated against real traffic before it is
+  granted execution (`tests/test_platform.py`).
+* **Multi-model routing & resilience (§6)** — over the connector PAL:
+  **latency-aware routing** (route to the lowest-p95 healthy connector),
+  **policy-aware fallback** (the ⚑ correction — a high-stakes request **fails
+  closed** rather than silently degrading to a lower-posture backend), and
+  **Mixture-of-Agents** (N proposers + medoid/aggregator, with proposer
+  **disagreement surfaced as an uncertainty signal** that routes to a human;
+  MoA gated to high-stakes bands by `moa_recommended` to bound its cost) —
+  14 tests in `tests/test_multimodel.py`.
+* **Cross-domain patterns (§7)** — four `DomainPack`s pair a reasoning pattern
+  with a deterministic **environmental verifier** (`maestro/domains/`):
+  **software** (ReAct + sandbox → tests pass), **finance** (plan-and-execute →
+  double-entry reconciliation), **healthcare/legal** (strict RAG → citation
+  grounding, an uncited claim hard-fails), **robotics** (HTN brain/spinal-cord →
+  safety-envelope veto). Each verifier plugs into `HMDCEngine` as a `task_gate`
+  that runs **before** the probabilistic judges — closing the §5 "strongest
+  correctness signal" gap: a failing verification short-circuits (judges never
+  run) — 15 tests in `tests/test_domains.py`.
 
 What is a reproduction risk and was **not** verified end-to-end:
 * The *absolute* Sec 6.2 telemetry interval on real hardware — the ~13 s

@@ -54,9 +54,10 @@ control-status truth audit that grades every row below honestly.
 | Secret management | 🟡 API key via env var; never logged (`base.describe()` redacts); no vault yet | env var | env var | config |
 | Operational risk engine | ✅ residual-risk scoring `R = f(likelihood, impact, exposure, detectability, recoverability, blast-radius)` with uncertainty penalty + control effectiveness (`security/risk_engine.py`, TC2 worked example) | n/a | n/a | n/a |
 | Control-status audit | ✅ Phase-0 "truth audit" — declared→implemented→enforced→tested→verified ladder; invariants reject "tested/verified while default-off" (`maestro-audit`, `security/control_status.py`) | n/a | n/a | n/a |
-| Audit / forensic logging | 🟡 declared in catalogue; not yet a hash-chained append-only log | n/a | n/a | n/a |
+| Enforcement plane (typed action + capability + gateway) | ✅ built, adversarially tested, **and wired into the live loop** (`security/{action,identity,ledger,enforcement}.py` + `platform/agent_platform.py`): LLM proposes a typed action, an independent fail-closed gateway authorizes it under a signed, scoped, short-lived capability, executes via an allow-listed adapter, and writes a tamper-evident hash-chained ledger. `AgentPlatform` is the **only** path from a model output to a side effect, so 8 controls are graded `enforced` at the boundary and `unsafe_action_rate` is `0.0` (`tests/test_platform.py`, `maestro-agent`) | n/a | n/a | n/a |
+| Audit / forensic logging | ✅ tamper-evident hash-chained + HMAC ledger records every gateway outcome (allow *and* deny) on the live loop; `verify_chain()` pinpoints tampering (`security/ledger.py`). External anchoring / evidence graph still Phase 3 | n/a | n/a | n/a |
 | Memory integrity (TC2) | 🟡 `memory.freeze()` + poison detection demonstrated; no signature/MAC yet | n/a | n/a | n/a |
-| Input validation | 🟡 planner allow-list (`DEFAULT_ALLOWED_ACTIONS`); `planner_validation` **default OFF**, honestly graded "implemented, not enforced" by the audit | partial (prompt schema) | partial | partial |
+| Input validation | ✅ typed executor-boundary allow-list on the live loop: every proposal is parsed against `INTENT_REGISTRY` (`security/action.py`) — unknown intent → quarantined, out-of-scope → capability denial. Supersedes the legacy planner-side `planner_validation` toggle (still default-OFF) | partial (prompt schema) | partial | partial |
 | Sandboxing | ❌ `container_sandbox` declared, not implemented | n/a | n/a | n/a |
 | Rate limiting | ❌ `api_rate_limits` declared, not enforced | n/a | n/a | n/a |
 | Zero-trust API | 🟡 bearer-token layer above is the first step; full `zero_trust_api` still **default OFF** | n/a | n/a | n/a |
@@ -78,12 +79,15 @@ control-status truth audit that grades every row below honestly.
 > **Status update (2026):** items marked ✅ below are now implemented and
 > tested. Delivered so far: opt-in bearer-token auth on the API
 > (`MAESTRO_API_TOKEN`), SSRF guard on connector `base_url`, the
-> operational residual-risk engine, and the Phase-0 control-status truth
-> audit (`maestro-audit`). Remaining items (memory MAC, hash-chained
-> audit log, rate limiting, sandbox) are still open. See `docs/SECOPS.md`.
+> operational residual-risk engine, the Phase-0 control-status truth audit
+> (`maestro-audit`), and — new — the **Enforcement Plane wired into a live
+> control loop** (`AgentPlatform`: typed action + capability + fail-closed
+> gateway + tamper-evident hash-chained ledger; `maestro-agent`). Remaining
+> items (memory MAC, API rate limiting, real execution sandbox) are still
+> open. See `docs/SECOPS.md`.
 
 ### 4.1 Make declared mitigations real (currently default-OFF stubs)
-- **Turn `planner_validation` ON by default** and enforce `DEFAULT_ALLOWED_ACTIONS` at the executor boundary, not just the planner (`agent/planner.py`).
+- ✅ **Done (executor-boundary allow-list):** the `AgentPlatform` path parses every proposal against the typed `INTENT_REGISTRY` allow-list at the executor boundary — unknown intents are quarantined, out-of-scope intents denied at the capability gate. This supersedes the legacy planner-side `planner_validation` toggle (`agent/planner.py`), which remains default-OFF and is now redundant on the enforced path.
 - **Implement `memory_isolation`**: load `history.json` read-only after integrity verification; reject writes that don't pass a signature/hash check.
 - **Implement `telemetry_rollback`**: keep last-safe policy checkpoint in `telemetry/` and restore on sustained anomaly.
 - **Implement `zero_trust_api`**: at minimum, require a scoped bearer token + per-call validation on `server/app.py` WebSocket/HTTP; document mTLS path.
