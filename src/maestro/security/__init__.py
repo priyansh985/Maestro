@@ -50,6 +50,16 @@ from .identity import (
 )
 from .ledger import AuditEvent, Ledger
 from .metrics import compute_metrics
+from .perimeter import (
+    Disposition,
+    DualLLMPerimeter,
+    InjectionScanner,
+    InjectionSignal,
+    PerimeterResult,
+    SignalCategory,
+    SymbolicVariable,
+    extract_variables,
+)
 from .risk_engine import (
     CAPABILITY_REQUIRED_ACTIONS,
     Decision,
@@ -111,4 +121,13 @@ __all__ = [
     "action_confidence",
     "confidence_band",
     "compute_metrics",
+    # dual-LLM injection perimeter (L1 input boundary)
+    "DualLLMPerimeter",
+    "InjectionScanner",
+    "InjectionSignal",
+    "SignalCategory",
+    "SymbolicVariable",
+    "PerimeterResult",
+    "Disposition",
+    "extract_variables",
 ]

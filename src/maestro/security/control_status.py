@@ -94,6 +94,20 @@ CONTROLS: list[Control] = [
               "hard rule. Enforced on the AgentPlatform path: confidence is "
               "computed and gated for every action.",
     ),
+    Control(
+        "CTRL-L1-04", "Dual-LLM injection perimeter (untrusted input boundary)", "L1",
+        Status.TESTED, "enabled",
+        "security/perimeter.py:DualLLMPerimeter.ingest",
+        "security/perimeter.py:DualLLMPerimeter + InjectionScanner",
+        "tests/test_perimeter.py",
+        notes="Structural anti-injection: untrusted external content is scanned, "
+              "typed variables are the only thing that may cross to the privileged "
+              "path, instruction-shaped content is quarantined (admitted only as "
+              "inert UNTRUSTED data), and active tool/exfiltration attempts are "
+              "blocked. Tested as a standalone boundary; not yet wired into the "
+              "AgentPlatform live loop (detector-sourced alerts are internal), so "
+              "graded tested, not boundary-enforced.",
+    ),
     # L2 — Data / memory
     Control(
         "CTRL-L2-01", "Memory isolation (read-only freeze)", "L2",
