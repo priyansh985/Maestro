@@ -55,6 +55,8 @@ blast radius, and approval before any side effect, and appends an audit record.
 | **HMDC critique** (4-stage gated evaluation) + shadow mode | `maestro/critique/` + `platform/agent_platform.py` | implemented + tested; deterministic gate dispositive, cross-family judges, variance→human, verbosity/position bias countered; shadow mode withholds execution for evaluation |
 | **Multi-model routing / resilience** (§6) | `maestro/connectors/{routing,policy_fallback,moa}.py` | tested; latency-aware routing, **policy-aware fail-closed fallback**, Mixture-of-Agents (disagreement = uncertainty) |
 | **Cross-domain packs + environmental verifiers** (§7) | `maestro/domains/` | implemented + tested; tests/reconcile/citation/safety verifiers wired into HMDC as a task_gate (closes the §5 gap) |
+| **Dual-LLM injection perimeter** (§1, L1 boundary) | `maestro/security/perimeter.py` | implemented + tested; untrusted content is scanned, instruction-shaped content quarantined (inert), active tool/exfiltration attempts blocked, and only typed variables cross to the privileged path (component; standalone boundary, not yet on the live loop) |
+| **Operator control panel + REST API** (§3) | `maestro/server/control_api.py` + `control_panel.py` (`/control`) | implemented + tested; a self-contained offline SPA whose every action drives the real control plane (live loop, ledger, memory, perimeter, HMDC, truth audit) |
 | Legacy `P × I × E` score (paper) | `maestro/maestro/risk_score.py` | unchanged |
 
 The **model connector system** (`maestro/connectors/`, `/playground`) provides

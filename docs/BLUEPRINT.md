@@ -106,6 +106,21 @@ retrieved context/tool output), and data exfiltration.
   actually authorize. Conflating the two is the most common security-theater
   mistake in this space.
 
+> **Implementation status (`security/perimeter.py`).** Built: a
+> `DualLLMPerimeter` realizes the offline, deterministic form of the dual-LLM
+> pattern. Untrusted external content is scanned for injection (category-tagged:
+> instruction-override / delimiter-breakout / obfuscation / tool-invocation /
+> exfiltration) and ruled on — `ADMIT` clean data, `QUARANTINE` instruction-
+> shaped content as *inert* `UNTRUSTED` data (it can be stored and cited but can
+> never influence the agent), or `BLOCK` active tool/exfiltration attempts. The
+> **only** thing permitted to cross into the privileged path is a list of typed,
+> validated `SymbolicVariable`s (IP, port, count, CVE, hash) — never free-form
+> text. True to the correction above, the scanner only *raises scrutiny /
+> quarantines*; deterministic policy + capabilities still authorize. Tested in
+> `tests/test_perimeter.py`; graded `tested` (a standalone boundary, not yet
+> wired into the live loop, whose alerts are detector-internal). Exposed on the
+> control panel's **Injection Perimeter** tab.
+
 ---
 
 ## 2. Core Platform Architecture & System Components
@@ -211,6 +226,21 @@ summary — and **never** raw CoT, prompts, or scratchpad (asserted by test).
 
 The dashboard offers a **human-readable decision view** by default with a "raw
 payload" toggle for deep debugging (redacted), never raw CoT as the front door.
+
+> **Implementation status (`server/control_api.py`, `server/control_panel.py`).**
+> Built: an operator **control panel** served at **`/control`** — a
+> self-contained, offline single-page app (no build step, no CDN, all
+> HTML/CSS/JS inline, in keeping with the codebase) backed by a `/api/*` REST
+> router. It is deliberately thin: every action drives the *real* control plane.
+> Tabs — **Overview** (mode, kill switch, ledger integrity, truth-audit
+> coverage), **Live Loop** (feed an alert → decision card; halt/resume/shadow/
+> reset), **Truth Audit** (the declared→verified ladder), **Ledger** (the
+> hash-chained events + integrity badge), **Memory** (quarantined episodic
+> records), **Injection Perimeter** (§1 tester), **HMDC Critique** (§5), and
+> **MAESTRO Layers** (the 7-layer model + Table-4 matrix). The decision view is
+> the CoT-free decision card described above. Tested via `TestClient` in
+> `tests/test_control_api.py`. This is the concrete build of §3 (a Next.js SPA
+> was descoped in favor of the offline discipline the rest of the repo holds to).
 
 ---
 

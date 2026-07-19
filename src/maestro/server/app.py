@@ -24,7 +24,8 @@ from ..config import load_config
 from ..logging_setup import get_logger
 from ..maestro.mapping import threat_risk_matrix
 from ..maestro.threats import load_threats
-from . import connectors_api
+from . import connectors_api, control_api
+from .control_panel import CONTROL_PANEL_HTML
 from .dashboard import DASHBOARD_HTML
 from .playground import PLAYGROUND_HTML
 
@@ -41,10 +42,16 @@ def create_app(cfg: Any = None) -> FastAPI:
 
     # Model-connector testing dashboard + REST API (Deliverable 2).
     app.include_router(connectors_api.router)
+    # Control-plane REST API driving the live enforcement stack (blueprint §3).
+    app.include_router(control_api.router)
 
     @app.get("/", response_class=HTMLResponse)
     def root() -> str:
         return DASHBOARD_HTML.replace("{{ ws_path }}", cfg.server.ws_path)
+
+    @app.get("/control", response_class=HTMLResponse)
+    def control_panel() -> str:
+        return CONTROL_PANEL_HTML
 
     @app.get("/playground", response_class=HTMLResponse)
     def playground() -> str:

@@ -27,6 +27,7 @@ that build on it:
 | **2. Model connector system** | A provider-agnostic LLM abstraction (OpenAI, Anthropic, Ollama/local, custom) with graceful fallback, a registry, and a web testing dashboard at **`/playground`**. The agent routes all LLM calls through it. | [`docs/CONNECTORS.md`](docs/CONNECTORS.md) |
 | **3. MAESTRO-SecOps security layer** | The repositioning toward a *security control plane*: an operational residual-risk engine, an **Enforcement Plane** (typed action schema, capability tokens, executor gateway, tamper-evident ledger), and a Phase-0 "truth audit" that honestly classifies every control as declared/implemented/enforced/tested/verified. | [`docs/SECOPS.md`](docs/SECOPS.md) |
 | **4. Agent platform (live loop)** | The keystone: `AgentPlatform` wires the reasoner through the Enforcement Plane so a model can only *propose* — deterministic services authorize, execute, verify, and record. Try it offline with **`maestro-agent`**. | [`docs/BLUEPRINT.md`](docs/BLUEPRINT.md) |
+| **5. Operator control panel** | A self-contained (offline, no build step) web control panel at **`/control`** whose every button drives the *real* control plane: feed alerts through the live loop, inspect the tamper-evident ledger and quarantined memory, test the dual-LLM injection perimeter, run HMDC critique, and read the truth audit. | [`docs/BLUEPRINT.md`](docs/BLUEPRINT.md) §3 |
 
 A comparison with other "MAESTRO"-named projects and the full security roadmap
 are in [`MAESTRO_COMPARISON.md`](MAESTRO_COMPARISON.md). The end-to-end platform
@@ -40,9 +41,10 @@ flagged — is in [`docs/BLUEPRINT.md`](docs/BLUEPRINT.md).
 > that the paper *cites and uses* — our L1–L7 are CSA MAESTRO's layers, not an
 > original taxonomy.
 
-**Status:** 333 tests pass · `ruff` + `mypy` clean · reproduce pipeline +
-connector + security + platform + memory + orchestration + critique + domains
-suites all green (see §6). Everything works **offline with no API key** (deterministic stub default).
+**Status:** 361 tests pass · `ruff` + `mypy` clean · reproduce pipeline +
+connector + security + platform + memory + orchestration + critique + domains +
+perimeter + control-panel API suites all green (see §6). Everything works
+**offline with no API key** (deterministic stub default).
 
 ---
 
@@ -173,8 +175,10 @@ follows Sec 4.1 verbatim and lives in `src/maestro/maestro/layers.py`.
 │       ├── app.py            # FastAPI + WebSocket backend (Sec 6.1)
 │       ├── dashboard.py      # MAESTRO risk dashboard (Sec 3.1)
 │       ├── connectors_api.py # /api model-testing REST router (opt-in auth)
-│       └── playground.py     # /playground connector testing dashboard
-├── tests/                    # 333 tests: reproduction + connectors + security + platform + memory + orchestration + critique + domains
+│       ├── playground.py     # /playground connector testing dashboard
+│       ├── control_api.py    # /api/* control-plane REST router (drives the live loop)
+│       └── control_panel.py  # /control offline operator SPA (blueprint §3)
+├── tests/                    # 361 tests: reproduction + connectors + security + platform + memory + orchestration + critique + domains + perimeter + control-panel
 ├── docs/
 │   ├── CONNECTORS.md         # connector system: usage, add-a-provider, checklist
 │   ├── SECOPS.md             # security control-plane direction + status + roadmap
@@ -369,9 +373,17 @@ offline. Open the dashboard at **`/playground`**:
 
 ```bash
 uvicorn maestro.server.app:app --port 8000
-# → http://127.0.0.1:8000/playground   (dashboard)
+# → http://127.0.0.1:8000/control      (operator control panel — drives the live loop)
+#   http://127.0.0.1:8000/playground   (connector testing dashboard)
 #   http://127.0.0.1:8000/api/...       (REST API)
 ```
+
+The **operator control panel** at **`/control`** is a self-contained, offline
+single-page app (no build step, no CDN) whose every action calls the real
+framework: submit an alert and watch it flow reason → propose → authorize →
+execute → ledger; inspect the hash-chained ledger and quarantined memory; feed
+untrusted text through the **dual-LLM injection perimeter**; run **HMDC
+critique**; toggle shadow mode and the kill switch; and read the truth audit.
 
 It works offline with no API key (deterministic stub is the default). The
 framework routes LLM calls through the connector via `ConnectorReasoner` (no
@@ -508,7 +520,7 @@ Environment variables:
 
 ## 6. Verification status
 
-Verified end-to-end (**333 tests pass**; `ruff` + `mypy` clean; full
+Verified end-to-end (**361 tests pass**; `ruff` + `mypy` clean; full
 `reproduce.sh`/`reproduce.bat` pipeline green):
 * Eq.(1) implementations match Sec 4.3.1 illustrative numerical
   examples, including the Low/Moderate/High buckets 3 → 8 → 9
