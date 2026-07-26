@@ -7,6 +7,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from maestro.connectors import ConnectorRegistry, StubConnector
+from maestro.server.auth import configure_auth
 from maestro.server.connectors_api import (
     LogStore,
     TestCaseStore,
@@ -14,6 +15,17 @@ from maestro.server.connectors_api import (
 )
 
 pytestmark = pytest.mark.asyncio
+
+
+@pytest.fixture(autouse=True)
+def _open_api():
+    """These are functional tests of connector behavior, not the auth boundary
+    (that is proven adversarially in test_api_auth.py). Run them against the
+    paper's open baseline so they stay hermetic and independent of process-global
+    auth state left by other modules."""
+    configure_auth(enforce=False, service=None, rate_limiter=None)
+    yield
+    configure_auth(enforce=False, service=None, rate_limiter=None)
 
 
 def _app() -> tuple[FastAPI, ConnectorRegistry, LogStore, TestCaseStore]:

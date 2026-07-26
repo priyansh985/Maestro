@@ -8,16 +8,22 @@ view is the honest truth audit; the perimeter tester calls the real
 :class:`~maestro.security.perimeter.DualLLMPerimeter`. The control panel is thin;
 the security properties live in the framework and are exercised through it.
 
-State is process-scoped: one live platform instance (rebuildable via ``reset``)
-so the ledger, memory, budget, and circuit breaker accumulate across requests
-the way an operator would see them.
+State is process-scoped and **partitioned by tenant** (CTRL-L4-08): there is one
+live ``AgentPlatform`` + ledger + memory per tenant, created lazily and routed to
+by the authenticated principal's tenant claim. Within a tenant the ledger,
+memory, budget, and circuit breaker accumulate across requests the way an
+operator would see them; across tenants the isolation is structural — a principal
+for tenant A reaches a different object graph than tenant B, so there is no
+shared table to leak through and no per-call scope argument to forget. (Postgres
+row-level security is the single-database variant of the same guarantee, and
+remains the documented production seam.)
 """
 from __future__ import annotations
 
 from dataclasses import asdict
 from typing import Any
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 
 from ..critique import (
@@ -35,8 +41,23 @@ from ..security.control_status import to_report
 from ..security.metrics import compute_metrics
 from ..security.perimeter import DualLLMPerimeter
 from ..telemetry.detection import Alert, AlertClass
+from .auth import (
+    Principal,
+    enforce_rate_limit,
+    require_admin,
+    require_operator,
+    require_viewer,
+)
 
-router = APIRouter(prefix="/api", tags=["control-plane"])
+# Zero-trust boundary (CTRL-L4-03): every control-plane route requires at least a
+# VIEWER principal and is rate-limited per principal (router-level dependencies);
+# mutating routes raise the bar to OPERATOR and the destructive /reset to ADMIN
+# (per-route dependencies below).
+router = APIRouter(
+    prefix="/api",
+    tags=["control-plane"],
+    dependencies=[Depends(require_viewer), Depends(enforce_rate_limit)],
+)
 
 #: The critique panel's fixed rubric (anchored dimensions, not "is it good?").
 _CRITIQUE_RUBRIC: tuple[RubricCriterion, ...] = (
@@ -46,19 +67,25 @@ _CRITIQUE_RUBRIC: tuple[RubricCriterion, ...] = (
 
 
 # --------------------------------------------------------------------------- #
-# Process-scoped live state.
+# Process-scoped live state, partitioned by tenant (CTRL-L4-08).
 # --------------------------------------------------------------------------- #
 class _ControlPlane:
-    """Holds the single live platform + stateless helpers the panel drives."""
+    """One tenant's live platform + stateless helpers the panel drives.
 
-    def __init__(self) -> None:
+    Every ``AgentPlatform`` here is bound to ``tenant`` (its memory scope is
+    ``(tenant, agent)``), so its ledger/memory/decisions belong to exactly one
+    tenant and cannot be reached by another.
+    """
+
+    def __init__(self, tenant: str) -> None:
+        self.tenant = tenant
         self.perimeter = DualLLMPerimeter()
         self._threats = load_threats()
         self.reset(shadow=False)
 
     def reset(self, *, shadow: bool) -> None:
         """Rebuild the platform from scratch (clears ledger/memory/budget/breaker)."""
-        self.platform = AgentPlatform(shadow=shadow)
+        self.platform = AgentPlatform(tenant=self.tenant, shadow=shadow)
         self.shadow = shadow
 
     def critique_engine(self) -> HMDCEngine:
@@ -66,7 +93,51 @@ class _ControlPlane:
         return HMDCEngine([RubricJudge("alpha"), RubricJudge("beta")])
 
 
-_PLANE = _ControlPlane()
+class _TenantPlanes:
+    """Registry of per-tenant control planes — the structural isolation boundary.
+
+    ``for_tenant`` lazily creates and returns the caller-tenant's isolated plane;
+    no method exposes another tenant's plane, so routing through this registry is
+    the *only* way an endpoint touches live state, and it is impossible to touch
+    the wrong tenant's.
+    """
+
+    def __init__(self) -> None:
+        self._planes: dict[str, _ControlPlane] = {}
+
+    def for_tenant(self, tenant: str) -> _ControlPlane:
+        plane = self._planes.get(tenant)
+        if plane is None:
+            plane = _ControlPlane(tenant)
+            self._planes[tenant] = plane
+        return plane
+
+    def tenants(self) -> list[str]:
+        return sorted(self._planes)
+
+    def clear(self) -> None:
+        """Drop all tenant planes (used by tests for a clean slate)."""
+        self._planes.clear()
+
+
+_PLANES = _TenantPlanes()
+
+
+# --------------------------------------------------------------------------- #
+# Tenant-scoped plane resolvers: the single choke point. Each authenticates at
+# its privilege tier AND returns the principal's own isolated plane, so no
+# endpoint ever names a tenant or reaches a shared global.
+# --------------------------------------------------------------------------- #
+def viewer_plane(principal: Principal = Depends(require_viewer)) -> _ControlPlane:
+    return _PLANES.for_tenant(principal.tenant)
+
+
+def operator_plane(principal: Principal = Depends(require_operator)) -> _ControlPlane:
+    return _PLANES.for_tenant(principal.tenant)
+
+
+def admin_plane(principal: Principal = Depends(require_admin)) -> _ControlPlane:
+    return _PLANES.for_tenant(principal.tenant)
 
 
 # --------------------------------------------------------------------------- #
@@ -115,10 +186,11 @@ def layers() -> dict[str, Any]:
 
 
 @router.get("/state")
-def state() -> dict[str, Any]:
+def state(plane: _ControlPlane = Depends(viewer_plane)) -> dict[str, Any]:
     """A one-screen snapshot: mode, kill-switch, blast radius, ledger depth."""
-    platform = _PLANE.platform
+    platform = plane.platform
     return {
+        "tenant": plane.tenant,
         "shadow": platform.shadow,
         "halted": platform.pep.halted,
         "blast_radius": platform.blast_radius().as_dict(),
@@ -128,15 +200,15 @@ def state() -> dict[str, Any]:
 
 
 @router.get("/blast-radius")
-def blast_radius() -> dict[str, Any]:
+def blast_radius(plane: _ControlPlane = Depends(viewer_plane)) -> dict[str, Any]:
     """The agent's bounded reach — legible on one screen (blueprint §2)."""
-    return _PLANE.platform.blast_radius().as_dict()
+    return plane.platform.blast_radius().as_dict()
 
 
 @router.get("/ledger")
-def ledger() -> dict[str, Any]:
+def ledger(plane: _ControlPlane = Depends(viewer_plane)) -> dict[str, Any]:
     """The tamper-evident, hash-chained audit ledger + an integrity check."""
-    lg = _PLANE.platform.ledger
+    lg = plane.platform.ledger
     first_broken = lg.verify_chain()  # -1 if intact, else index of first tampered event
     return {
         "events": [asdict(e) for e in lg.events],
@@ -148,10 +220,10 @@ def ledger() -> dict[str, Any]:
 
 
 @router.get("/memory")
-def memory() -> dict[str, Any]:
+def memory(plane: _ControlPlane = Depends(viewer_plane)) -> dict[str, Any]:
     """Scoped episodic memory, including quarantined (untrusted) records."""
-    store = _PLANE.platform.memory
-    scope = _PLANE.platform.scope
+    store = plane.platform.memory
+    scope = plane.platform.scope
     records = store.recall(scope, include_untrusted=True)
     return {
         "scope": scope.key,
@@ -161,9 +233,9 @@ def memory() -> dict[str, Any]:
 
 
 @router.get("/metrics")
-def metrics() -> dict[str, Any]:
+def metrics(plane: _ControlPlane = Depends(viewer_plane)) -> dict[str, Any]:
     """Operational metrics derived from the ledger (not self-reported counters)."""
-    return compute_metrics(_PLANE.platform.ledger)
+    return compute_metrics(plane.platform.ledger)
 
 
 # --------------------------------------------------------------------------- #
@@ -177,14 +249,16 @@ def _parse_class(name: str) -> AlertClass:
 
 
 @router.post("/alert")
-def submit_alert(body: AlertIn) -> dict[str, Any]:
+def submit_alert(
+    body: AlertIn, plane: _ControlPlane = Depends(operator_plane)
+) -> dict[str, Any]:
     """Run one alert through the live loop and return the decision card."""
     import time
 
     cls = _parse_class(body.cls)
     detail = body.detail or f"operator-injected {cls.value} alert"
     alert = Alert(ts=time.time(), cls=cls, severity=body.severity, detail=detail)
-    result = _PLANE.platform.handle_alert(alert)
+    result = plane.platform.handle_alert(alert)
     return {
         "alert_class": result.alert_class,
         "proposed_action": result.proposed_action,
@@ -197,15 +271,19 @@ def submit_alert(body: AlertIn) -> dict[str, Any]:
 
 
 @router.post("/perimeter")
-def perimeter(body: PerimeterIn) -> dict[str, Any]:
+def perimeter(
+    body: PerimeterIn, plane: _ControlPlane = Depends(operator_plane)
+) -> dict[str, Any]:
     """Rule on untrusted external content through the dual-LLM perimeter."""
-    return _PLANE.perimeter.ingest(body.content, source=body.source).as_dict()
+    return plane.perimeter.ingest(body.content, source=body.source).as_dict()
 
 
 @router.post("/critique")
-def critique(body: CritiqueIn) -> dict[str, Any]:
+def critique(
+    body: CritiqueIn, plane: _ControlPlane = Depends(operator_plane)
+) -> dict[str, Any]:
     """Run a candidate output through the HMDC pipeline (offline judges)."""
-    engine = _PLANE.critique_engine()
+    engine = plane.critique_engine()
     spec = CritiqueSpec(
         intent=body.intent,
         grounding=tuple(body.grounding),
@@ -216,20 +294,28 @@ def critique(body: CritiqueIn) -> dict[str, Any]:
 
 
 @router.post("/halt")
-def halt() -> dict[str, Any]:
-    """Trip the kill switch — deny all further actions."""
-    _PLANE.platform.halt()
+def halt(plane: _ControlPlane = Depends(operator_plane)) -> dict[str, Any]:
+    """Trip the kill switch — deny all further actions (this tenant's plane)."""
+    plane.platform.halt()
     return {"halted": True}
 
 
 @router.post("/resume")
-def resume() -> dict[str, Any]:
-    _PLANE.platform.resume()
+def resume(plane: _ControlPlane = Depends(operator_plane)) -> dict[str, Any]:
+    plane.platform.resume()
     return {"halted": False}
 
 
 @router.post("/reset")
-def reset(body: ResetIn) -> dict[str, Any]:
-    """Rebuild the platform (clears ledger/memory); optionally in shadow mode."""
-    _PLANE.reset(shadow=body.shadow)
-    return {"shadow": _PLANE.shadow, "ledger_events": len(_PLANE.platform.ledger)}
+def reset(body: ResetIn, plane: _ControlPlane = Depends(admin_plane)) -> dict[str, Any]:
+    """Rebuild this tenant's platform (clears its ledger/memory); optionally shadow.
+
+    Structurally scoped to the caller's tenant: an admin of tenant A cannot reset
+    tenant B's plane because ``admin_plane`` only ever yields A's.
+    """
+    plane.reset(shadow=body.shadow)
+    return {
+        "tenant": plane.tenant,
+        "shadow": plane.shadow,
+        "ledger_events": len(plane.platform.ledger),
+    }

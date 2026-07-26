@@ -1,4 +1,10 @@
-"""Security-hardening tests: SSRF guard on base_url + optional API auth."""
+"""Security-hardening tests: SSRF guard on connector base_url.
+
+The connectors API's authentication/authorization boundary (bearer token + RBAC
++ per-principal rate limiting, CTRL-L4-03/07) is proven adversarially in
+test_api_auth.py; this module focuses on the SSRF guard that stops a registered
+connector from pointing at link-local / metadata / multicast addresses.
+"""
 from __future__ import annotations
 
 import pytest
@@ -8,8 +14,8 @@ from fastapi.testclient import TestClient
 from maestro.connectors import ConnectorRegistry, StubConnector
 from maestro.connectors.providers.custom import CustomConnector
 from maestro.connectors.providers.http_base import assert_safe_base_url
+from maestro.server.auth import configure_auth
 from maestro.server.connectors_api import (
-    API_TOKEN_ENV,
     LogStore,
     TestCaseStore,
     create_connectors_router,
@@ -17,6 +23,16 @@ from maestro.server.connectors_api import (
 
 # Async tests are auto-collected via asyncio_mode="auto"; the sync SSRF tests
 # must not carry an asyncio mark, so no module-level pytestmark.
+
+
+@pytest.fixture(autouse=True)
+def _open_api():
+    """Exercise the SSRF guard against the open baseline so these tests are
+    hermetic and independent of process-global auth state (the auth boundary
+    itself is covered in test_api_auth.py)."""
+    configure_auth(enforce=False, service=None, rate_limiter=None)
+    yield
+    configure_auth(enforce=False, service=None, rate_limiter=None)
 
 
 # --------------------------------------------------------------------------- #
@@ -64,36 +80,3 @@ async def test_register_metadata_url_is_400(monkeypatch):
             "name": "evil", "provider": "custom", "model": "m",
             "base_url": "http://169.254.169.254/latest/meta-data/", "api_key": "k"})
         assert r.status_code == 400
-
-
-# --------------------------------------------------------------------------- #
-# Optional API auth
-# --------------------------------------------------------------------------- #
-def _auth_app():
-    reg = ConnectorRegistry()
-    reg.register(StubConnector("stub"), default=True)
-    app = FastAPI()
-    app.include_router(create_connectors_router(reg, LogStore(), TestCaseStore()))
-    return app
-
-
-async def test_api_open_when_token_unset(monkeypatch):
-    monkeypatch.delenv(API_TOKEN_ENV, raising=False)
-    with TestClient(_auth_app()) as client:
-        assert client.get("/api/connectors").status_code == 200
-
-
-async def test_api_requires_token_when_set(monkeypatch):
-    monkeypatch.setenv(API_TOKEN_ENV, "s3cret")
-    with TestClient(_auth_app()) as client:
-        assert client.get("/api/connectors").status_code == 401
-        assert client.post("/api/chat", json={"prompt": "hi", "connector": "stub"}).status_code == 401
-        ok = client.get("/api/connectors", headers={"authorization": "Bearer s3cret"})
-        assert ok.status_code == 200
-
-
-async def test_api_rejects_wrong_token(monkeypatch):
-    monkeypatch.setenv(API_TOKEN_ENV, "right")
-    with TestClient(_auth_app()) as client:
-        r = client.get("/api/connectors", headers={"authorization": "Bearer wrong"})
-        assert r.status_code == 401

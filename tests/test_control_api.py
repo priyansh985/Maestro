@@ -11,11 +11,20 @@ import pytest
 from fastapi.testclient import TestClient
 
 from maestro.server.app import create_app
+from maestro.server.auth import AuthService, Role, configure_auth
 
 
 @pytest.fixture
 def client() -> TestClient:
-    c = TestClient(create_app())
+    app = create_app()  # create_app configures auth from config (enforce=True)
+    # Override with a fixed-key service so the test is deterministic and offline,
+    # and drive every request as an ADMIN (>= all roles) so these functional
+    # tests exercise the endpoints; role/authn adversarial cases live in
+    # tests/test_api_auth.py.
+    svc = AuthService(key=b"test-control-api-key")
+    configure_auth(enforce=True, service=svc, control_plane_tenant="default")
+    token = svc.issue("svc:test", tenant="default", role=Role.ADMIN, ttl_seconds=3600)
+    c = TestClient(app, headers={"Authorization": f"Bearer {token}"})
     c.post("/api/reset", json={"shadow": False})  # isolate live state per test
     return c
 

@@ -12,12 +12,11 @@ dashboard is fully usable with no API key and no network.
 from __future__ import annotations
 
 import itertools
-import os
 import time
 from collections import deque
 from typing import Any
 
-from fastapi import APIRouter, Depends, Header, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from ..connectors import (
@@ -30,6 +29,7 @@ from ..connectors import (
     Role,
     build_registry,
 )
+from .auth import enforce_rate_limit, require_operator, require_viewer
 
 
 # --------------------------------------------------------------------------- #
@@ -135,28 +135,6 @@ class VerifyRequest(BaseModel):
 
 
 # --------------------------------------------------------------------------- #
-# Optional auth (env-gated; off by default so offline dev is unaffected)
-# --------------------------------------------------------------------------- #
-API_TOKEN_ENV = "MAESTRO_API_TOKEN"
-
-
-def require_api_token(authorization: str | None = Header(default=None)) -> None:
-    """Require ``Authorization: Bearer <token>`` when ``MAESTRO_API_TOKEN`` is
-    set. When the env var is unset the API is open (local-dev default). Read at
-    request time so the token can be rotated without a restart.
-
-    Gating registration matters: the ``custom`` provider lets an operator point
-    a connector at an arbitrary URL, so a token should protect any deployment
-    reachable beyond localhost.
-    """
-    token = os.environ.get(API_TOKEN_ENV)
-    if not token:
-        return
-    if authorization != f"Bearer {token}":
-        raise HTTPException(status_code=401, detail="invalid or missing API token")
-
-
-# --------------------------------------------------------------------------- #
 # Router factory
 # --------------------------------------------------------------------------- #
 def create_connectors_router(
@@ -164,9 +142,22 @@ def create_connectors_router(
     logs: LogStore,
     testcases: TestCaseStore,
 ) -> APIRouter:
-    """Build the ``/api`` router bound to the given registry + stores."""
-    router = APIRouter(prefix="/api", tags=["connectors"],
-                       dependencies=[Depends(require_api_token)])
+    """Build the ``/api`` router bound to the given registry + stores.
+
+    The model-testing surface is guarded by the same zero-trust boundary as the
+    control plane (CTRL-L4-03, ``server/auth.py``): reads require a VIEWER token,
+    every mutation requires OPERATOR, and all requests are rate-limited per
+    principal. This matters because the ``custom`` provider lets a caller point a
+    connector at an arbitrary URL — an unauthenticated register/chat is a
+    confused-deputy egress path. Enforcement follows ``mitigation.zero_trust_api``
+    (default-on); with it off the API is open, restoring the offline-dev default.
+    """
+    router = APIRouter(
+        prefix="/api", tags=["connectors"],
+        dependencies=[Depends(require_viewer), Depends(enforce_rate_limit)],
+    )
+    #: Every mutation on the model-testing API requires OPERATOR (reads: VIEWER).
+    _MUTATION = [Depends(require_operator)]
 
     def _build_request(req: ChatApiRequest) -> ChatRequest:
         messages: list[ChatMessage] = []
@@ -221,7 +212,7 @@ def create_connectors_router(
     def list_connectors() -> dict[str, Any]:
         return {"connectors": registry.list_descriptions(), "default": registry.default_name}
 
-    @router.post("/connectors")
+    @router.post("/connectors", dependencies=_MUTATION)
     def register_connector(body: RegisterConnectorRequest) -> dict[str, Any]:
         extra: dict[str, Any] = {}
         if body.auth_header:
@@ -244,16 +235,16 @@ def create_connectors_router(
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         return {"connector": connector.describe()}
 
-    @router.delete("/connectors/{name}")
+    @router.delete("/connectors/{name}", dependencies=_MUTATION)
     def delete_connector(name: str) -> dict[str, Any]:
         registry.remove(name)
         return {"removed": name}
 
-    @router.post("/connectors/{name}/enable")
+    @router.post("/connectors/{name}/enable", dependencies=_MUTATION)
     def enable_connector(name: str) -> dict[str, Any]:
         return _set_enabled(name, True)
 
-    @router.post("/connectors/{name}/disable")
+    @router.post("/connectors/{name}/disable", dependencies=_MUTATION)
     def disable_connector(name: str) -> dict[str, Any]:
         return _set_enabled(name, False)
 
@@ -264,7 +255,7 @@ def create_connectors_router(
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         return {"connector": connector.describe()}
 
-    @router.post("/connectors/{name}/default")
+    @router.post("/connectors/{name}/default", dependencies=_MUTATION)
     def make_default(name: str) -> dict[str, Any]:
         try:
             registry.set_default(name)
@@ -272,7 +263,7 @@ def create_connectors_router(
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         return {"default": name}
 
-    @router.post("/connectors/{name}/health")
+    @router.post("/connectors/{name}/health", dependencies=_MUTATION)
     def health(name: str) -> dict[str, Any]:
         try:
             connector = registry.get(name)
@@ -281,7 +272,7 @@ def create_connectors_router(
         return {"connector": name, "ok": connector.health_check()}
 
     # -- chat -------------------------------------------------------------- #
-    @router.post("/chat")
+    @router.post("/chat", dependencies=_MUTATION)
     def chat(body: ChatApiRequest) -> dict[str, Any]:
         chat_request = _build_request(body)
 
@@ -330,12 +321,12 @@ def create_connectors_router(
     def get_logs(limit: int = 100) -> dict[str, Any]:
         return {"logs": logs.list(limit)}
 
-    @router.delete("/logs")
+    @router.delete("/logs", dependencies=_MUTATION)
     def clear_logs() -> dict[str, Any]:
         logs.clear()
         return {"cleared": True}
 
-    @router.post("/logs/{log_id}/verify")
+    @router.post("/logs/{log_id}/verify", dependencies=_MUTATION)
     def verify_log(log_id: int, body: VerifyRequest) -> dict[str, Any]:
         record = logs.get(log_id)
         if record is None:
@@ -348,18 +339,18 @@ def create_connectors_router(
     def list_testcases() -> dict[str, Any]:
         return {"testcases": testcases.list()}
 
-    @router.post("/testcases")
+    @router.post("/testcases", dependencies=_MUTATION)
     def save_testcase(body: SaveTestCaseRequest) -> dict[str, Any]:
         record = testcases.add(body.model_dump())
         return {"testcase": record}
 
-    @router.delete("/testcases/{cid}")
+    @router.delete("/testcases/{cid}", dependencies=_MUTATION)
     def delete_testcase(cid: int) -> dict[str, Any]:
         if not testcases.remove(cid):
             raise HTTPException(status_code=404, detail=f"no testcase {cid}")
         return {"removed": cid}
 
-    @router.post("/testcases/{cid}/replay")
+    @router.post("/testcases/{cid}/replay", dependencies=_MUTATION)
     def replay_testcase(cid: int) -> dict[str, Any]:
         case = testcases.get(cid)
         if case is None:

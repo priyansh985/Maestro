@@ -20,11 +20,12 @@ from typing import Any
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse, JSONResponse
 
-from ..config import load_config
+from ..config import cfg_get, load_config
 from ..logging_setup import get_logger
 from ..maestro.mapping import threat_risk_matrix
 from ..maestro.threats import load_threats
 from . import connectors_api, control_api
+from .auth import DEFAULT_CONTROL_PLANE_TENANT, RateLimiter, configure_auth
 from .control_panel import CONTROL_PANEL_HTML
 from .dashboard import DASHBOARD_HTML
 from .playground import PLAYGROUND_HTML
@@ -39,6 +40,20 @@ def create_app(cfg: Any = None) -> FastAPI:
     app = FastAPI(title="MAESTRO Network Monitoring Agent (repro of arXiv:2508.10043)")
     threats = load_threats()
     matrix = threat_risk_matrix(threats)
+
+    # Zero-trust boundary for the whole /api surface (control plane + model
+    # testing; CTRL-L4-03). Default-on; setting mitigation.zero_trust_api=false
+    # restores the paper's unauthenticated baseline. The signing key comes from
+    # MAESTRO_SIGNING_KEY at request time. A per-principal token-bucket rate
+    # limiter (CTRL-L4-07) bounds inbound requests; api_rate_limit_per_min<=0
+    # disables it.
+    configure_auth(
+        enforce=bool(cfg_get(cfg, "mitigation.zero_trust_api", True)),
+        control_plane_tenant=DEFAULT_CONTROL_PLANE_TENANT,
+        rate_limiter=RateLimiter.per_minute(
+            float(cfg_get(cfg, "mitigation.api_rate_limit_per_min", 120))
+        ),
+    )
 
     # Model-connector testing dashboard + REST API (Deliverable 2).
     app.include_router(connectors_api.router)
