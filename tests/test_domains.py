@@ -10,6 +10,7 @@ from maestro.critique import Candidate, CritiqueSpec, HMDCEngine, RubricJudge, V
 from maestro.domains import (
     CitationVerifier,
     DomainPack,
+    NetworkMitigationVerifier,
     ReconciliationVerifier,
     SafetyEnvelopeVerifier,
     TestSuiteVerifier,
@@ -101,6 +102,45 @@ def test_safety_envelope_vetoes_out_of_range():
     v = SafetyEnvelopeVerifier({"velocity": (0.0, 2.0)})
     r = v.verify(_cand("move"), {"command": {"velocity": 5.0}})
     assert not r.verified and "velocity" in r.reason
+
+
+# --------------------------------------------------------------------------- #
+# Network monitoring — the mitigation-policy veto (the reproduction's own domain)
+# --------------------------------------------------------------------------- #
+def _mitigation(intent: str) -> Candidate:
+    return Candidate("mitigation rationale", family="network-monitor",
+                     metadata={"intent": intent})
+
+
+def test_mitigation_verifier_passes_an_appropriate_response():
+    v = NetworkMitigationVerifier()
+    r = v.verify(_mitigation("throttle_telemetry"), {"alert_class": "dos"})
+    assert r.verified and r.signal == "mitigation-policy"
+
+
+def test_mitigation_verifier_vetoes_threshold_raise_during_a_dos():
+    # The unsafe case: raising thresholds mid-DoS blinds the detector.
+    v = NetworkMitigationVerifier()
+    r = v.verify(_mitigation("raise_thresholds"), {"alert_class": "dos"})
+    assert not r.verified and "not an appropriate" in r.reason
+
+
+def test_mitigation_verifier_vetoes_action_on_a_benign_baseline():
+    v = NetworkMitigationVerifier()
+    assert not v.verify(_mitigation("throttle_telemetry"), {"alert_class": "normal"}).verified
+    assert v.verify(_mitigation("noop"), {"alert_class": "normal"}).verified
+
+
+def test_mitigation_verifier_fails_closed_without_context():
+    v = NetworkMitigationVerifier()
+    assert not v.verify(_mitigation("noop"), {}).verified          # no alert class
+    assert not v.verify(Candidate("x"), {"alert_class": "dos"}).verified  # no intent
+
+
+def test_mitigation_verifier_rejects_an_unknown_alert_class():
+    v = NetworkMitigationVerifier()
+    r = v.verify(_mitigation("noop"), {"alert_class": "made_up"})
+    assert not r.verified and "unknown alert class" in r.reason
 
 
 # --------------------------------------------------------------------------- #

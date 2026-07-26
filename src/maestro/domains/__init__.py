@@ -25,6 +25,7 @@ from .packs import (
 )
 from .verifiers import (
     CitationVerifier,
+    NetworkMitigationVerifier,
     ReconciliationVerifier,
     SafetyEnvelopeVerifier,
     TaskVerifier,
@@ -39,6 +40,7 @@ __all__ = [
     "ReconciliationVerifier",
     "CitationVerifier",
     "SafetyEnvelopeVerifier",
+    "NetworkMitigationVerifier",
     "software_engineering_pack",
     "finance_pack",
     "healthcare_legal_pack",

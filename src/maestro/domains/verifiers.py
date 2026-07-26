@@ -141,6 +141,63 @@ class CitationVerifier(TaskVerifier):
         return VerifierResult(True, self.signal, f"grounded ({support:.2f}) with citations")
 
 
+class NetworkMitigationVerifier(TaskVerifier):
+    """Network monitoring (the reproduction's core domain): the mitigation veto.
+
+    The reproduction's own §5.3 "spinal cord": the LLM reasoner (the "brain")
+    *proposes* a mitigation intent for an observed alert; this deterministic gate
+    checks that intent against a fixed policy matrix keyed by the alert class —
+    **without consulting the model**. A mitigation that is inappropriate or
+    unsafe for the observed condition is vetoed *before* it can execute — most
+    importantly one that would *degrade detection during an attack* (e.g. raising
+    anomaly thresholds while a DoS is in progress, which blinds the detector) or
+    that would *act on a benign baseline*. This is a fact about the environment,
+    not an opinion, so it short-circuits the probabilistic judges.
+
+    ``context['alert_class']`` is the observed class; the proposed intent is read
+    from ``candidate.metadata['intent']`` (the model's claim), so the veto
+    compares the model's proposal against the ground-truth condition.
+    """
+
+    domain = "network_monitoring"
+    signal = "mitigation-policy"
+
+    #: The mitigations that are appropriate *and* safe for each observed alert
+    #: class. Anything outside the set for the observed class is vetoed. Notably
+    #: ``raise_thresholds`` is absent from ``dos`` (it would blind the detector
+    #: mid-attack) and every active mitigation is absent from ``normal`` (acting
+    #: on a baseline is itself a self-inflicted disruption).
+    _APPROPRIATE: dict[str, frozenset[str]] = {
+        "dos": frozenset({
+            "throttle_telemetry", "rollback_telemetry",
+            "raise_capture_duration", "alert_operator"}),
+        "anomaly": frozenset({
+            "raise_thresholds", "raise_capture_duration", "alert_operator", "noop"}),
+        "port_scan": frozenset({"raise_capture_duration", "alert_operator", "noop"}),
+        "bruteforce": frozenset({"alert_operator", "raise_capture_duration", "noop"}),
+        "normal": frozenset({"noop", "alert_operator"}),
+    }
+
+    def verify(self, candidate: Candidate, context: dict[str, object] | None = None) -> VerifierResult:
+        ctx = context or {}
+        alert_class = str(ctx.get("alert_class", "")).strip().lower()
+        intent = str((candidate.metadata or {}).get("intent", "")).strip()
+        if not alert_class:
+            return VerifierResult(False, self.signal, "no alert class to verify the mitigation against")
+        if not intent:
+            return VerifierResult(False, self.signal, "no proposed mitigation intent to check")
+        allowed = self._APPROPRIATE.get(alert_class)
+        if allowed is None:
+            return VerifierResult(False, self.signal, f"unknown alert class {alert_class!r}")
+        if intent not in allowed:
+            return VerifierResult(
+                False, self.signal,
+                f"mitigation {intent!r} is not an appropriate/safe response to a "
+                f"{alert_class!r} alert")
+        return VerifierResult(
+            True, self.signal, f"{intent!r} is an appropriate response to {alert_class!r}")
+
+
 class SafetyEnvelopeVerifier(TaskVerifier):
     """Embodied AI / robotics (HTN brain/spinal-cord): the deterministic veto.
 
