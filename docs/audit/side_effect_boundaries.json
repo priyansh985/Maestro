@@ -1,0 +1,78 @@
+{
+  "schema_version": "1.0",
+  "boundary_count": 8,
+  "boundaries": [
+    {
+      "id": "SEB-01",
+      "name": "Operational tool execution (SOC mitigations)",
+      "sink": "maestro.platform.agent_platform:default_tool_adapters",
+      "class": "SIMULATED_EXTERNAL",
+      "reversible": "varies (rollback_telemetry is the compensating action)",
+      "gated_by": "CTRL-L3-02 (PEP capability gateway), CTRL-L3-01 (allow-list), CTRL-L6-03 (signed policy-bundle allow-list, two-person change), CTRL-L5-08 (environmental verifier veto), CTRL-L5-06 (HMDC gated critique), CTRL-L3-04 (executor sandbox: scope + output confinement), CTRL-L4-05 (durable exactly-once replay)",
+      "notes": "THE consequential boundary. In this offline reproduction the adapters model the effect (throttle/thresholds/capture/alert/rollback). The intent must be permitted by the active signed policy bundle (CTRL-L6-03) \u2014 a versioned, two-person-approved allow-list whose integrity is re-verified here. Before the side effect a pre-execution critique gate (BP7) runs the HMDC engine + the deterministic environmental verifier, vetoing a mitigation inappropriate/unsafe for the observed alert; the adapter then runs inside an in-process ExecutionSandbox that confines the result to the authorized scope and replays it exactly-once across a crash. In production the adapters would call a firewall/SOAR/capture control through an OS-level sandbox (gVisor/Firecracker) backed by Temporal.io. No model output reaches here except through a typed, authorized, allow-listed, environmentally-verified proposal."
+    },
+    {
+      "id": "SEB-02",
+      "name": "Tamper-evident audit ledger append",
+      "sink": "maestro.security.ledger:Ledger.append",
+      "class": "INTERNAL_STATE",
+      "reversible": "no (append-only, hash-chained by design)",
+      "gated_by": "CTRL-L5-02 (ledger is the record, not a gated action)",
+      "notes": "Append-only, HMAC-signed, hash-chained; optionally persisted to disk. Deletion/modification is detectable via verify_chain()."
+    },
+    {
+      "id": "SEB-03",
+      "name": "Persistent memory write / promotion",
+      "sink": "maestro.memory.store:MemoryStore.promote / .recall_cross_scope",
+      "class": "INTERNAL_STATE",
+      "reversible": "yes (records are versioned; promotion is audited)",
+      "gated_by": "CTRL-L2-03 (independent cap:memory:promote), CTRL-L2-05 (cap:memory:cross-tenant-read), CTRL-L2-04 (scope isolation)",
+      "notes": "External content lands UNTRUSTED (quarantine-on-ingest). Promotion to TRUSTED and cross-tenant reads have no autonomous path \u2014 each needs an independent scoped capability and is recorded in the ledger."
+    },
+    {
+      "id": "SEB-04",
+      "name": "Capability token issuance / delegation",
+      "sink": "maestro.security.identity:CapabilityIssuer.issue / .delegate",
+      "class": "INTERNAL_STATE",
+      "reversible": "n/a (tokens are short-lived; scope only narrows)",
+      "gated_by": "CTRL-L7-02 (delegation strictly narrows, depth-capped)",
+      "notes": "HMAC-signed, scoped, TTL-bounded authority. Delegation cannot widen scope or outlive its parent (MAX_DELEGATION_DEPTH)."
+    },
+    {
+      "id": "SEB-05",
+      "name": "Outbound model/provider HTTP call",
+      "sink": "maestro.connectors.providers.http_base:HttpConnector",
+      "class": "EXTERNAL_NETWORK",
+      "reversible": "n/a (read of external model)",
+      "gated_by": "CTRL-L4-02 (provider auth), CTRL-L4-06 (policy-aware, fail-closed fallback)",
+      "notes": "The ONLY egress off the box. OFF the default offline loop, which uses the deterministic stub reasoner. Keys from env, never persisted; fallback fails closed rather than downgrading tier."
+    },
+    {
+      "id": "SEB-06",
+      "name": "Host packet replay (experiment TC1)",
+      "sink": "maestro.experiments.tc1_dos:tcpreplay_pcap / scapy sendp",
+      "class": "HOST_ENVIRONMENT",
+      "reversible": "no (emits real packets on an interface)",
+      "gated_by": "experiment-only; NOT on the agent control plane",
+      "notes": "Best-effort side effect of the DoS reproduction; the reported metric is the MODELED saturation curve (A13), not this send. Never reachable from an agent action."
+    },
+    {
+      "id": "SEB-07",
+      "name": "Filesystem result/log writes",
+      "sink": "maestro.experiments.runner / summary, ledger persistence, control_status.write_report",
+      "class": "HOST_ENVIRONMENT",
+      "reversible": "yes (results/ artifacts, overwritable)",
+      "gated_by": "n/a (developer tooling, not an agent capability)",
+      "notes": "Writes to results/ and docs/audit/. Not reachable from a model proposal; produced by explicit developer/CI invocation."
+    },
+    {
+      "id": "SEB-08",
+      "name": "Legacy memory file write (pre-enforcement path)",
+      "sink": "maestro.agent.memory:AgentMemory (history.json)",
+      "class": "INTERNAL_STATE",
+      "reversible": "yes",
+      "gated_by": "SUPERSEDED \u2014 not tamper-evident (CTRL-L2-01 default-off)",
+      "notes": "The paper's poisonable history.json. Retained for the TC2 reproduction; the enforced path is memory/store.py (SEB-03)."
+    }
+  ]
+}

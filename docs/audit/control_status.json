@@ -1,0 +1,413 @@
+{
+  "schema_version": "1.0",
+  "controls": [
+    {
+      "control_id": "CTRL-L1-01",
+      "name": "LLM guardrails + output validators",
+      "maestro_layer": "L1",
+      "status": "declared",
+      "default_state": "n/a",
+      "enforcement_point": null,
+      "implementation": null,
+      "test_id": null,
+      "notes": "Catalogue entry in maestro/mitigation.py; no runtime output policy validator implemented yet (Phase 2)."
+    },
+    {
+      "control_id": "CTRL-L1-02",
+      "name": "Deterministic reasoner (offline default)",
+      "maestro_layer": "L1",
+      "status": "implemented",
+      "default_state": "enabled",
+      "enforcement_point": null,
+      "implementation": "agent/reasoning.py:StubReasoner",
+      "test_id": "tests/test_reasoning.py",
+      "notes": "Safe default (offline/deterministic) that bounds L1 exposure; a configuration default, not an enforcement point \u2014 hence implemented, not enforced."
+    },
+    {
+      "control_id": "CTRL-L1-03",
+      "name": "Action confidence profile (independent signals)",
+      "maestro_layer": "L1",
+      "status": "tested",
+      "default_state": "enabled",
+      "enforcement_point": "platform/agent_platform.py:AgentPlatform (confidence computed per action)",
+      "implementation": "security/confidence.py:action_confidence",
+      "test_id": "tests/test_enforcement_hardening.py + tests/test_platform.py",
+      "notes": "Confidence is built from independently observable signals (evidence/validator/policy/reversibility/history), NOT model self-report; it only *raises* scrutiny and can never override a hard rule. Enforced on the AgentPlatform path: confidence is computed and gated for every action."
+    },
+    {
+      "control_id": "CTRL-L1-04",
+      "name": "Dual-LLM injection perimeter (untrusted input boundary)",
+      "maestro_layer": "L1",
+      "status": "tested",
+      "default_state": "enabled",
+      "enforcement_point": "security/perimeter.py:DualLLMPerimeter.ingest",
+      "implementation": "security/perimeter.py:DualLLMPerimeter + InjectionScanner",
+      "test_id": "tests/test_perimeter.py",
+      "notes": "Structural anti-injection: untrusted external content is scanned, typed variables are the only thing that may cross to the privileged path, instruction-shaped content is quarantined (admitted only as inert UNTRUSTED data), and active tool/exfiltration attempts are blocked. Tested as a standalone boundary; not yet wired into the AgentPlatform live loop (detector-sourced alerts are internal), so graded tested, not boundary-enforced."
+    },
+    {
+      "control_id": "CTRL-L2-01",
+      "name": "Memory isolation (read-only freeze)",
+      "maestro_layer": "L2",
+      "status": "implemented",
+      "default_state": "disabled",
+      "enforcement_point": "agent/memory.py:AgentMemory.freeze",
+      "implementation": "agent/memory.py:AgentMemory.freeze",
+      "test_id": "tests/test_memory.py",
+      "notes": "Best-effort POSIX chmod, default-off (config mitigation.memory_isolation=false). Not tamper-evident; superseded by the signed-promotion + hash-chain design in Phase 3."
+    },
+    {
+      "control_id": "CTRL-L2-02",
+      "name": "Memory-poisoning detection (high-severity count)",
+      "maestro_layer": "L2",
+      "status": "tested",
+      "default_state": "enabled",
+      "enforcement_point": "agent/parameter_tuning.py:poisoned_count",
+      "implementation": "agent/memory.py:AgentMemory.poisoned_count",
+      "test_id": "tests/test_parameter_tuning.py",
+      "notes": "Detection/observability only (drives capture-duration); does not prevent poisoned writes."
+    },
+    {
+      "control_id": "CTRL-L2-03",
+      "name": "Quarantined memory promotion (independent authorization)",
+      "maestro_layer": "L2",
+      "status": "tested",
+      "default_state": "enabled",
+      "enforcement_point": "platform/agent_platform.py:AgentPlatform (every alert quarantined on ingest)",
+      "implementation": "memory/store.py:MemoryStore.promote",
+      "test_id": "tests/test_memory_integrity.py + tests/test_platform.py",
+      "notes": "Now ENFORCED on the live loop: every detection the agent handles is recorded as an UNTRUSTED episodic record through the scoped MemoryStore, so quarantine-on-ingest is non-optional and an injected poison record is inert on the running agent (test_poisoned_memory_is_quarantined_and_inert_on_the_live_agent). Promotion to TRUSTED still requires an independent, scoped cap:memory:promote and is recorded in the platform's unified ledger; adversarially tested (self-promotion, expired/wrong-tenant capability, cross-scope promotion all denied)."
+    },
+    {
+      "control_id": "CTRL-L2-04",
+      "name": "Four-tier memory isolation + read-only procedural tier",
+      "maestro_layer": "L2",
+      "status": "tested",
+      "default_state": "enabled",
+      "enforcement_point": "platform/agent_platform.py:AgentPlatform (evidence grounded via scoped MemoryStore)",
+      "implementation": "memory/store.py:MemoryStore",
+      "test_id": "tests/test_memory_integrity.py + tests/test_platform.py",
+      "notes": "Now ENFORCED on the live loop: every authorized action's evidence is resolved against the agent's scoped MemoryStore (isolation-aware existence), so an evidence reference from another tenant/agent does not resolve (test_evidence_reference_is_scope_isolated). Strict (tenant, agent) scoping, read-only procedural memory, and curated-only semantic writes are adversarially tested. Postgres row-level security remains the production hardening that moves isolation below the application layer."
+    },
+    {
+      "control_id": "CTRL-L2-05",
+      "name": "Capability-gated cross-tenant memory access",
+      "maestro_layer": "L2",
+      "status": "implemented",
+      "default_state": "enabled",
+      "enforcement_point": null,
+      "implementation": "memory/store.py:MemoryStore.recall_cross_scope",
+      "test_id": "tests/test_memory_integrity.py",
+      "notes": "Phase-3 build: cross-tenant memory access has *no autonomous path* (blueprint \u00a74.3) \u2014 it requires a cap:memory:cross-tenant-read bound to the target scope, is deny-by-default, and every access is recorded in the platform's unified tamper-evident ledger. Adversarially tested (missing capability, wrong-capability-class, and wrong-tenant tokens all denied). Rated 'implemented' \u2014 a capability-gated admin path, not part of the automatic live loop."
+    },
+    {
+      "control_id": "CTRL-L3-01",
+      "name": "Action allow-list validation (executor boundary)",
+      "maestro_layer": "L3",
+      "status": "tested",
+      "default_state": "enabled",
+      "enforcement_point": "platform/agent_platform.py + security/action.py:parse_proposal",
+      "implementation": "security/action.py:INTENT_REGISTRY (allow-list)",
+      "test_id": "tests/test_platform.py + tests/test_enforcement.py",
+      "notes": "Enforced at the executor boundary, not the planner: the platform parses every proposal against the typed INTENT_REGISTRY allow-list \u2014 an unknown intent is quarantined, an out-of-scope intent denied at the capability gate. This supersedes the legacy planner-side toggle (agent/planner.py:validate_plans), which remained default-off and bypassable."
+    },
+    {
+      "control_id": "CTRL-L3-02",
+      "name": "Capability tokens / typed action schema / executor gateway",
+      "maestro_layer": "L3",
+      "status": "verified",
+      "default_state": "enabled",
+      "enforcement_point": "platform/agent_platform.py:AgentPlatform -> PolicyEnforcementPoint",
+      "implementation": "security/enforcement.py + security/identity.py + security/action.py",
+      "test_id": "tests/test_enforcement.py + tests/test_platform.py",
+      "notes": "Enforcement Plane keystone: untrusted model output is parsed into a typed proposal, authorized by a signed, scoped, short-lived capability, and executed only through an allow-listed adapter \u2014 fail-closed. Now ENFORCED on the live path: the AgentPlatform is the only path that executes tool actions and every action routes through the gateway (no bypass). Adversarial/bypass tested (forged/expired/out-of-scope capabilities, rogue and unknown intents) \u2014 hence 'verified'."
+    },
+    {
+      "control_id": "CTRL-L3-03",
+      "name": "Autonomy budget / rate limiting + idempotency",
+      "maestro_layer": "L3",
+      "status": "tested",
+      "default_state": "enabled",
+      "enforcement_point": "platform/agent_platform.py:AgentPlatform (budget + idempotency default-on)",
+      "implementation": "security/budget.py:AutonomyBudget",
+      "test_id": "tests/test_enforcement_hardening.py + tests/test_platform.py",
+      "notes": "Bounds tool calls / spend / blast-radius / call-rate before execution (the 'BudgetAvailable' conjunct); exactly-once idempotency keys stop a retry from duplicating a side effect. Enforced on the AgentPlatform path (secure-by-default budget + per-alert idempotency key); budget consumed only on executed actions."
+    },
+    {
+      "control_id": "CTRL-L3-04",
+      "name": "Executor sandbox \u2014 scope + output confinement at the side-effect boundary",
+      "maestro_layer": "L3",
+      "status": "verified",
+      "default_state": "enabled",
+      "enforcement_point": "platform/agent_platform.py:AgentPlatform -> PolicyEnforcementPoint (sandbox default-on)",
+      "implementation": "security/sandbox.py:ExecutionSandbox",
+      "test_id": "tests/test_sandbox.py + tests/test_platform.py",
+      "notes": "BP4 build: every authorized side effect runs through an in-process ExecutionSandbox at the executor (default-on, non-optional). The adapter result must be a JSON dict within a byte cap and may not claim a target outside the authorized proposal scope; any breach fails closed (deny 'sandbox') and is audited. Enforced on the AgentPlatform live loop and adversarially tested (out-of-scope target, oversized and non-serializable output, and an opt-in wall-clock timeout all denied). Honest boundary: this is in-process scope/output confinement, NOT kernel-level isolation - an in-process wrapper cannot force-kill a thread or contain syscalls, so OS-level sandboxing (gVisor/Firecracker) remains the documented seam (TB5)."
+    },
+    {
+      "control_id": "CTRL-L4-01",
+      "name": "Connector fallback / graceful degradation",
+      "maestro_layer": "L4",
+      "status": "tested",
+      "default_state": "enabled",
+      "enforcement_point": "connectors/fallback.py:FallbackConnector",
+      "implementation": "connectors/fallback.py:FallbackConnector",
+      "test_id": "tests/test_connectors_fallback.py",
+      "notes": "Availability control for the LLM backend path. Complemented by latency-aware routing (connectors/routing.py) which routes to the lowest-p95 healthy connector."
+    },
+    {
+      "control_id": "CTRL-L4-02",
+      "name": "Connector provider authentication",
+      "maestro_layer": "L4",
+      "status": "tested",
+      "default_state": "enabled",
+      "enforcement_point": "connectors/providers/http_base.py:HttpConnector",
+      "implementation": "connectors/providers/http_base.py:_headers",
+      "test_id": "tests/test_connectors_providers.py",
+      "notes": "Per-provider API-key/header auth; keys from env, never persisted."
+    },
+    {
+      "control_id": "CTRL-L4-03",
+      "name": "Zero-trust API front door (auth + RBAC, whole /api surface)",
+      "maestro_layer": "L4",
+      "status": "verified",
+      "default_state": "enabled",
+      "enforcement_point": "server/auth.py:require_role on the control_api AND connectors_api routers (guards the live PEP-driving surface and the model-testing surface)",
+      "implementation": "server/auth.py:AuthService + require_role",
+      "test_id": "tests/test_api_auth.py",
+      "notes": "BP3.1 + BP3.2 build: every /api route requires a signed HMAC bearer token and a sufficient role (viewer<operator<admin), fails closed. The principal's tenant claim is authenticated (signed) and drives structural per-tenant isolation of the control plane (CTRL-L4-08). BP3.2 extended the SAME boundary over the model-testing/connectors API (previously auth=NONE): reads require VIEWER, every mutation OPERATOR - closing the confused-deputy egress path where an unauthenticated caller could register a custom connector at an arbitrary URL. Enforced by default (mitigation.zero_trust_api=true; set false to restore the paper's unauthenticated baseline). Adversarially tested (missing/malformed/forged/expired/revoked tokens and under-privileged role all denied on both routers; cross-tenant isolation is proven under CTRL-L4-08) - hence 'verified'. This gates the API front door, NOT the PEP execution boundary (so it is not counted in boundary_enforced). Per-principal rate limiting is now built (CTRL-L4-07); OIDC/SSO login and an external RBAC/ABAC store remain production seams."
+    },
+    {
+      "control_id": "CTRL-L4-04",
+      "name": "Circuit breaker / runaway-loop detection",
+      "maestro_layer": "L4",
+      "status": "tested",
+      "default_state": "enabled",
+      "enforcement_point": "platform/agent_platform.py:AgentPlatform (breaker default-on)",
+      "implementation": "security/circuit_breaker.py:CircuitBreaker",
+      "test_id": "tests/test_operational_safety.py + tests/test_platform.py",
+      "notes": "Halts an agent stuck repeating the same (intent, args) signature >= N times within a window and escalates; complements idempotency (which stops re-executing a success). Enforced on the AgentPlatform path (breaker default-on)."
+    },
+    {
+      "control_id": "CTRL-L4-05",
+      "name": "Durable execution / exactly-once orchestration",
+      "maestro_layer": "L4",
+      "status": "tested",
+      "default_state": "enabled",
+      "enforcement_point": "platform/agent_platform.py:AgentPlatform (executor runs every side effect as a journaled activity)",
+      "implementation": "orchestration/engine.py:DurableEngine + security/sandbox.py:ExecutionSandbox",
+      "test_id": "tests/test_orchestration.py + tests/test_sandbox.py + tests/test_platform.py",
+      "notes": "BP4 wiring: the exactly-once mechanism is now ON THE LIVE LOOP by default. The executor sandbox journals every side effect keyed by the action's idempotency key and REPLAYS a recorded result instead of re-invoking the adapter, so a crash-and-retry cannot double-execute a mitigation. With the default in-memory journal the guard is process-scoped; AgentPlatform(journal_path=...) uses a file-backed journal that survives real process death - proven by a simulated-restart test where a fresh platform over the same on-disk journal replays the side effect exactly once. The standalone DurableEngine (event-sourced replay, retries/backoff, timeouts, replay-divergence detection) remains and is adversarially tested. Rated 'tested' (not 'verified'): the boundary mechanism and file-backed durability are tested; production would back the journal with Temporal.io rather than the in-repo engine."
+    },
+    {
+      "control_id": "CTRL-L4-06",
+      "name": "Policy-aware fallback (fail-closed degradation)",
+      "maestro_layer": "L4",
+      "status": "tested",
+      "default_state": "enabled",
+      "enforcement_point": "connectors/policy_fallback.py:PolicyAwareFallback",
+      "implementation": "connectors/policy_fallback.py:PolicyAwareFallback",
+      "test_id": "tests/test_multimodel.py",
+      "notes": "Blueprint \u00a76 correction: fallback degrades only *within* a request's required capability/trust tier and FAILS CLOSED (PolicyDegradationRefused) rather than silently downgrading a high-stakes request to a lower-posture backend \u2014 availability is not permitted to erode the security posture. Tested (low-stakes degrades freely; high-stakes refuses to drop below its tier). A connector-layer control (not on the default offline agent loop, which uses the deterministic stub reasoner)."
+    },
+    {
+      "control_id": "CTRL-L4-07",
+      "name": "Per-principal API request rate limiting (front-door abuse control)",
+      "maestro_layer": "L4",
+      "status": "tested",
+      "default_state": "enabled",
+      "enforcement_point": "server/auth.py:enforce_rate_limit on the control_api + connectors_api routers",
+      "implementation": "server/auth.py:RateLimiter",
+      "test_id": "tests/test_api_auth.py",
+      "notes": "BP3.2 build: a deterministic token-bucket limiter keyed per principal (tenant:subject) bounds inbound requests on the whole /api surface and fails closed with HTTP 429 when a bucket is exhausted, so one credential's burst cannot starve another principal or the plane. Tested (bucket exhaustion returns 429, continuous refill re-admits, and each principal has an independent bucket). Distinct from CTRL-L3-03 (the agent autonomy budget on the live loop) \u2014 this is a front-door (TB0) availability control, so it is NOT counted in boundary_enforced. Enforced by default (mitigation.api_rate_limit_per_min=120; <=0 disables; inert when zero_trust_api is false). A shared (Redis) store so the limit holds across replicas is the documented production seam."
+    },
+    {
+      "control_id": "CTRL-L4-08",
+      "name": "Structural multi-tenant isolation (per-tenant control planes)",
+      "maestro_layer": "L4",
+      "status": "verified",
+      "default_state": "enabled",
+      "enforcement_point": "server/control_api.py:_TenantPlanes.for_tenant (routes each principal to its own AgentPlatform+Ledger instance; the sole choke point to live state)",
+      "implementation": "server/control_api.py:_TenantPlanes + viewer_plane/operator_plane/admin_plane",
+      "test_id": "tests/test_tenant_isolation.py",
+      "notes": "BP3.3 build: the control plane is partitioned by tenant. Each tenant gets its own live AgentPlatform (memory scope (tenant, agent)), ledger, memory, budget and breaker, created lazily and reached ONLY through _TenantPlanes.for_tenant keyed by the authenticated (signed) principal.tenant claim. Isolation is structural, not a per-call check: a principal for tenant A reaches a different object graph than tenant B, so there is no shared table to leak through and no scope argument to forget - and /reset only ever rebuilds the caller's own tenant's plane. Adversarially tested (a principal cannot read another tenant's ledger/memory/state/metrics via ANY route, and cannot reset another tenant's plane; a spoofed tenant claim fails the token signature). This is a front-door / data-partition boundary (TB0/TB8), NOT the PEP execution boundary, so it is not counted in boundary_enforced. Postgres row-level security is the single-database variant of the same guarantee and remains the production seam."
+    },
+    {
+      "control_id": "CTRL-L5-01",
+      "name": "Structured request/response logging",
+      "maestro_layer": "L5",
+      "status": "tested",
+      "default_state": "enabled",
+      "enforcement_point": "server/connectors_api.py:LogStore",
+      "implementation": "server/connectors_api.py:LogStore",
+      "test_id": "tests/test_connectors_api.py",
+      "notes": "In-memory, bounded; NOT tamper-evident (no hash-chain/anchor). Superseded by the audit ledger in Phase 3."
+    },
+    {
+      "control_id": "CTRL-L5-02",
+      "name": "Tamper-evident audit ledger",
+      "maestro_layer": "L5",
+      "status": "verified",
+      "default_state": "enabled",
+      "enforcement_point": "platform/agent_platform.py:AgentPlatform (every action recorded)",
+      "implementation": "security/ledger.py:Ledger",
+      "test_id": "tests/test_enforcement.py + tests/test_platform.py",
+      "notes": "Append-only, hash-chained, HMAC-signed audit log; verify_chain() detects insertion/deletion/modification (adversarially tested against on-disk and in-memory tampering \u2014 hence 'verified'). Enforced on the AgentPlatform path: every outcome (allow AND deny) is recorded. External anchoring + evidence graph remain Phase-3 targets; the API's LogStore is a separate, non-forensic log."
+    },
+    {
+      "control_id": "CTRL-L5-03",
+      "name": "Operational residual-risk scoring",
+      "maestro_layer": "L5",
+      "status": "implemented",
+      "default_state": "enabled",
+      "enforcement_point": null,
+      "implementation": "security/risk_engine.py",
+      "test_id": "tests/test_risk_engine.py",
+      "notes": "Implemented + unit-tested but NOT enforced: the risk->decision mapping exists as a library and is not yet wired to gate any action at a side-effect boundary (Phase 2)."
+    },
+    {
+      "control_id": "CTRL-L5-04",
+      "name": "Decision observability (CoT-free decision card)",
+      "maestro_layer": "L5",
+      "status": "tested",
+      "default_state": "enabled",
+      "enforcement_point": "platform/agent_platform.py:AgentPlatform (card emitted per decision)",
+      "implementation": "security/enforcement.py:_decision_card",
+      "test_id": "tests/test_enforcement_hardening.py + tests/test_platform.py",
+      "notes": "Every gateway outcome emits a structured decision card (identity, validated proposal, evidence refs, policy result, risk, outcome) and a lifecycle state; raw chain-of-thought / prompts / scratchpad are deliberately never recorded. Enforced on the AgentPlatform path: the card is produced for every alert the loop handles and the absence of chain-of-thought is asserted end-to-end (test_decision_card_has_evidence_and_no_chain_of_thought)."
+    },
+    {
+      "control_id": "CTRL-L5-05",
+      "name": "Operational security metrics (ledger-derived)",
+      "maestro_layer": "L5",
+      "status": "implemented",
+      "default_state": "enabled",
+      "enforcement_point": "security/metrics.py:compute_metrics",
+      "implementation": "security/metrics.py:compute_metrics",
+      "test_id": "tests/test_operational_safety.py",
+      "notes": "Metrics (authorization rate, denials-by-stage, unsafe-action rate = bypass proof, tool-failure rate, ledger integrity) are derived from the tamper-evident ledger, not self-reported counters. Task-completion / grounding / memory-contamination rates are omitted (no goal labels / memory subsystem yet), not faked."
+    },
+    {
+      "control_id": "CTRL-L5-06",
+      "name": "HMDC gated critique at the side-effect boundary",
+      "maestro_layer": "L5",
+      "status": "tested",
+      "default_state": "enabled",
+      "enforcement_point": "platform/agent_platform.py:AgentPlatform -> PolicyEnforcementPoint (pre-execution critique gate default-on)",
+      "implementation": "critique/engine.py:HMDCEngine + security/critique_gate.py:HMDCGate",
+      "test_id": "tests/test_critique.py + tests/test_critique_gate.py + tests/test_platform.py",
+      "notes": "BP7 wiring: the four-stage *gated* HMDC critique (blueprint \u00a75) now runs as the LAST check before every side effect on the live loop. Its DETERMINISTIC stages gate autonomously \u2014 dispositive guardrails (a justification that leaks a secret/PII is REJECTed at the boundary before execution, tested end-to-end) and the environmental verifier (CTRL-L5-08) \u2014 while a probabilistic-judge disagreement / uncertainty ROUTES TO A HUMAN (escalates to the approver) rather than autonomously denying on a stand-in score. It never averages the stages and never lets a judge override a deterministic gate. Honest limit: the judge/embedder are deterministic lexical stand-ins, so on the live loop the semantic/ensemble thresholds are permissive and the operative HARD gate is the guardrail + environmental-verifier pair; the engine's CONTRACT (cross-family only, variance-aware, route-uncertainty-to-human) is enforced and tested \u2014 including a no-cross-family-judge routing case and the PEP escalate/deny mapping. Rated 'tested' not 'verified': the deterministic gates and the routing contract are tested at the boundary; a connector-backed cross-family judge would tighten the probabilistic thresholds."
+    },
+    {
+      "control_id": "CTRL-L5-07",
+      "name": "Shadow-mode evaluation (execution withheld)",
+      "maestro_layer": "L5",
+      "status": "implemented",
+      "default_state": "enabled",
+      "enforcement_point": null,
+      "implementation": "platform/agent_platform.py:shadow_tool_adapters",
+      "test_id": "tests/test_platform.py",
+      "notes": "Phase-5 build (blueprint \u00a75 sandbox tier): in shadow mode the full decision pipeline runs and records, but side effects are withheld (adapters return shadow=True), so a new policy/model can be evaluated against real traffic before it is granted execution. Tested: authorized-but-withheld outcome, decision recorded, clean evaluation metrics. Rated 'implemented' (a mode, not the default)."
+    },
+    {
+      "control_id": "CTRL-L5-08",
+      "name": "Environmental verifier veto at the side-effect boundary",
+      "maestro_layer": "L5",
+      "status": "verified",
+      "default_state": "enabled",
+      "enforcement_point": "platform/agent_platform.py:AgentPlatform -> PolicyEnforcementPoint (pre-execution critique gate default-on)",
+      "implementation": "domains/verifiers.py:NetworkMitigationVerifier + security/critique_gate.py:HMDCGate",
+      "test_id": "tests/test_domains.py + tests/test_critique_gate.py + tests/test_platform.py",
+      "notes": "BP7 wiring: the 'strongest correctness signal' (blueprint \u00a75.3) now gates the LIVE LOOP. Before any side effect, the deterministic NetworkMitigationVerifier checks the proposed mitigation against a fixed policy matrix keyed by the OBSERVED alert class \u2014 without consulting the model \u2014 and vetoes anything inappropriate/unsafe: raising detection thresholds during a DoS (which would blind the detector mid-attack) or acting on a benign baseline are denied at the executor even though capability, risk, budget and breaker all pass. A veto is a fact, so it short-circuits the probabilistic judges and denies autonomously (deny 'critique'). Default-on (enable_critique=True); adversarially tested on the live loop (unsafe mitigation and baseline-action both vetoed) \u2014 hence 'verified'. The four cross-domain verifiers (test-suite, reconciliation, citation-grounding, safety-envelope) remain the domain-pack library behind the same task_gate contract."
+    },
+    {
+      "control_id": "CTRL-L6-01",
+      "name": "Threat catalogue == Eq.(1) consistency check",
+      "maestro_layer": "L6",
+      "status": "tested",
+      "default_state": "enabled",
+      "enforcement_point": "maestro/threats.py:load_threats",
+      "implementation": "maestro/threats.py:load_threats",
+      "test_id": "tests/test_threats.py",
+      "notes": "Refuses to load if any risk_score != P*I*E; policy-as-code seed."
+    },
+    {
+      "control_id": "CTRL-L6-02",
+      "name": "Control-status truth audit (this module)",
+      "maestro_layer": "L6",
+      "status": "tested",
+      "default_state": "enabled",
+      "enforcement_point": "security/control_status.py:audit_invariants",
+      "implementation": "security/control_status.py",
+      "test_id": "tests/test_control_status.py",
+      "notes": "Phase-0 deliverable: classifies controls and fails the build if a control claims more than its evidence supports."
+    },
+    {
+      "control_id": "CTRL-L6-03",
+      "name": "Signed policy bundles / two-person change",
+      "maestro_layer": "L6",
+      "status": "verified",
+      "default_state": "enabled",
+      "enforcement_point": "platform/agent_platform.py:AgentPlatform -> PolicyEnforcementPoint (signed policy-bundle allow-list verified pre-execution, default-on)",
+      "implementation": "security/policy_bundle.py:PolicyRegistry + PolicyBundle",
+      "test_id": "tests/test_policy_bundle.py + tests/test_platform.py",
+      "notes": "Governance build (blueprint \u00a76 / L6): the executor's effective intent allow-list is a signed, versioned, content-addressed policy bundle \u2014 not merely static code. TWO enforcement surfaces. (1) Release-time governance: a change to the policy requires a two-person rule (separation of duties) \u2014 the actor who PROPOSES a new version may not be the one who APPROVES it; only a distinct approver's sign-off activates + HMAC-signs the bundle, and every governed change is recorded in the tamper-evident ledger (version, proposer, approvers, digest \u2014 never a secret). Genesis (v1) is the deploy-time baseline (single-authority bootstrap, signed for integrity, not itself a ledger event); every later version goes through propose->approve->activate with a chained parent_digest. (2) Execute-time boundary: the active bundle's signature is re-verified on EVERY read and its allow-list is consulted at the side-effect boundary before every action \u2014 a tampered/absent active bundle or a disallowed intent fails closed (deny 'policy_bundle'), which is what makes this boundary_enforced. Default-on (enable_policy_bundle=True; the genesis baseline admits the agent's vocabulary so it is non-blocking until a change tightens it). Adversarially tested (proposer self-approval and duplicate-approval rejected, a stale concurrent change rejected, a forged signature / mutated bundle content / wrong key all fail closed, and a two-person-approved tightening denies the de-listed mitigation on the LIVE loop) \u2014 hence 'verified'. The bundle's numeric limits are carried as signed, auditable metadata; those are enforced by their own controls (CTRL-L3-03 budget, CTRL-L4-04 breaker), not double-claimed. Production seam: external signer identities (OIDC/KMS key per approver + change-ticket gate) instead of one shared HMAC key."
+    },
+    {
+      "control_id": "CTRL-L7-01",
+      "name": "Operator dashboards + manual verification",
+      "maestro_layer": "L7",
+      "status": "tested",
+      "default_state": "enabled",
+      "enforcement_point": "server/playground.py + /api/logs/*/verify",
+      "implementation": "server/connectors_api.py:verify_log",
+      "test_id": "tests/test_connectors_api.py",
+      "notes": "Human-in-the-loop verify checkmarks; does not yet show blast radius / contradictory evidence (Phase 3 approval UX)."
+    },
+    {
+      "control_id": "CTRL-L7-02",
+      "name": "Delegation limits / kill switch",
+      "maestro_layer": "L7",
+      "status": "tested",
+      "default_state": "enabled",
+      "enforcement_point": "platform/agent_platform.py:AgentPlatform.halt (kill switch on the live loop)",
+      "implementation": "security/identity.py:CapabilityIssuer.delegate + enforcement.py",
+      "test_id": "tests/test_enforcement.py + tests/test_platform.py",
+      "notes": "Capability delegation strictly narrows scope, cannot outlive the parent, and is depth-capped (MAX_DELEGATION_DEPTH); the PEP kill switch denies all actions when tripped. Enforced on the AgentPlatform path: the agent's capabilities are issued by delegation from its human controller (delegation_depth=1) and AgentPlatform.halt() stops the live loop end-to-end (test_kill_switch_halts_the_platform). SBOM/AI-BOM and supply-chain attestation remain Phase-5 targets."
+    },
+    {
+      "control_id": "CTRL-L7-03",
+      "name": "Secure-by-inheritance agent provisioning",
+      "maestro_layer": "L7",
+      "status": "implemented",
+      "default_state": "enabled",
+      "enforcement_point": null,
+      "implementation": "platform/provisioning.py:AgentProvisioner",
+      "test_id": "tests/test_provisioning.py",
+      "notes": "Phase-4 build (blueprint \u00a74.4): a new agent is stood up by instantiating a bounded PolicyEnvelope (same tenant, intent vocabulary, budget, and TTL as its cohort) under a capability delegated from the human controller \u2014 never a fresh permissive default. Least privilege is structural: allowed_intents narrows the vocabulary and out-of-envelope actions are denied at the gateway (test_least_privilege_is_enforced_at_the_gateway); provisioning is health-gated (unavailable provider refused) and audited. Rated 'implemented' (component): no live provider-registration event loop drives it yet."
+    }
+  ],
+  "coverage": {
+    "total": 35,
+    "by_status": {
+      "declared": 1,
+      "implemented": 7,
+      "enforced": 0,
+      "tested": 20,
+      "verified": 7
+    },
+    "by_layer": {
+      "L1": 4,
+      "L2": 5,
+      "L3": 4,
+      "L4": 8,
+      "L5": 8,
+      "L6": 3,
+      "L7": 3
+    },
+    "enforced_or_above": 27,
+    "enforcement_ratio": 0.771,
+    "boundary_enforced": 15
+  },
+  "violations": []
+}

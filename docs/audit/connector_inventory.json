@@ -1,0 +1,72 @@
+{
+  "schema_version": "1.0",
+  "providers": [
+    {
+      "name": "anthropic",
+      "path": "src/maestro/connectors/providers/anthropic.py",
+      "role": "Anthropic Messages API connector."
+    },
+    {
+      "name": "custom",
+      "path": "src/maestro/connectors/providers/custom.py",
+      "role": "User-registered external providers."
+    },
+    {
+      "name": "http_base",
+      "path": "src/maestro/connectors/providers/http_base.py",
+      "role": "Shared HTTP plumbing for network-backed connectors."
+    },
+    {
+      "name": "ollama",
+      "path": "src/maestro/connectors/providers/ollama.py",
+      "role": "Ollama connector for local model inference."
+    },
+    {
+      "name": "openai",
+      "path": "src/maestro/connectors/providers/openai.py",
+      "role": "OpenAI Chat Completions connector (also the base for custom OpenAI-compatible providers such as vLLM, LM Studio, Together, Groq, OpenRouter, \u2026)."
+    },
+    {
+      "name": "stub",
+      "path": "src/maestro/connectors/providers/stub.py",
+      "role": "Deterministic offline connector."
+    }
+  ],
+  "infrastructure": [
+    {
+      "name": "base",
+      "path": "src/maestro/connectors/base.py",
+      "role": "Provider-agnostic model-connector abstraction."
+    },
+    {
+      "name": "config",
+      "path": "src/maestro/connectors/config.py",
+      "role": "Build a :class:`ConnectorRegistry` from YAML + environment."
+    },
+    {
+      "name": "fallback",
+      "path": "src/maestro/connectors/fallback.py",
+      "role": "Fallback connector \u2014 graceful degradation across an ordered chain."
+    },
+    {
+      "name": "moa",
+      "path": "src/maestro/connectors/moa.py",
+      "role": "Mixture of Agents (MoA) \u2014 response aggregation for high-stakes queries (\u00a76)."
+    },
+    {
+      "name": "policy_fallback",
+      "path": "src/maestro/connectors/policy_fallback.py",
+      "role": "Policy-aware fallback (blueprint \u00a76 \u2014 the \u2691 correction)."
+    },
+    {
+      "name": "registry",
+      "path": "src/maestro/connectors/registry.py",
+      "role": "Connector registry \u2014 register / enable / disable / resolve connectors."
+    },
+    {
+      "name": "routing",
+      "path": "src/maestro/connectors/routing.py",
+      "role": "Latency-aware routing over the Provider Abstraction Layer (blueprint \u00a76)."
+    }
+  ]
+}

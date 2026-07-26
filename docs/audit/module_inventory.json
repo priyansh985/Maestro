@@ -1,0 +1,610 @@
+{
+  "schema_version": "1.0",
+  "package_root": "src/maestro",
+  "module_count": 86,
+  "total_lines": 11350,
+  "modules": [
+    {
+      "module": "maestro.__init__",
+      "path": "src/maestro/__init__.py",
+      "package": ".",
+      "lines": 1,
+      "role": ""
+    },
+    {
+      "module": "maestro.agent.__init__",
+      "path": "src/maestro/agent/__init__.py",
+      "package": "agent",
+      "lines": 2,
+      "role": "Agent modules:"
+    },
+    {
+      "module": "maestro.agent.memory",
+      "path": "src/maestro/agent/memory.py",
+      "package": "agent",
+      "lines": 97,
+      "role": "Agent memory store (Sec 3.1 Reporting & Logging Module + Sec 6.3 memory)."
+    },
+    {
+      "module": "maestro.agent.parameter_tuning",
+      "path": "src/maestro/agent/parameter_tuning.py",
+      "package": "agent",
+      "lines": 48,
+      "role": "Parameter tuning module (Sec 6.3 \u300chistory.json controls the param'' module\u300d)."
+    },
+    {
+      "module": "maestro.agent.planner",
+      "path": "src/maestro/agent/planner.py",
+      "package": "agent",
+      "lines": 87,
+      "role": "Planner module (Sec 3.1 + Sec 5.3 L3 \u2014 planner validation)."
+    },
+    {
+      "module": "maestro.agent.reasoning",
+      "path": "src/maestro/agent/reasoning.py",
+      "package": "agent",
+      "lines": 174,
+      "role": "LLM Reasoning Engine (Sec 3.1 L1 + control loop)."
+    },
+    {
+      "module": "maestro.cli",
+      "path": "src/maestro/cli.py",
+      "package": ".",
+      "lines": 9,
+      "role": "Console entry points."
+    },
+    {
+      "module": "maestro.config",
+      "path": "src/maestro/config.py",
+      "package": ".",
+      "lines": 39,
+      "role": "``src/maestro/config.py`` \u2014 single entry point for loading ``configs/default.yaml``."
+    },
+    {
+      "module": "maestro.connectors.__init__",
+      "path": "src/maestro/connectors/__init__.py",
+      "package": "connectors",
+      "lines": 82,
+      "role": "Maestro model-connector system."
+    },
+    {
+      "module": "maestro.connectors.base",
+      "path": "src/maestro/connectors/base.py",
+      "package": "connectors",
+      "lines": 301,
+      "role": "Provider-agnostic model-connector abstraction."
+    },
+    {
+      "module": "maestro.connectors.config",
+      "path": "src/maestro/connectors/config.py",
+      "package": "connectors",
+      "lines": 118,
+      "role": "Build a :class:`ConnectorRegistry` from YAML + environment."
+    },
+    {
+      "module": "maestro.connectors.fallback",
+      "path": "src/maestro/connectors/fallback.py",
+      "package": "connectors",
+      "lines": 74,
+      "role": "Fallback connector \u2014 graceful degradation across an ordered chain."
+    },
+    {
+      "module": "maestro.connectors.moa",
+      "path": "src/maestro/connectors/moa.py",
+      "package": "connectors",
+      "lines": 124,
+      "role": "Mixture of Agents (MoA) \u2014 response aggregation for high-stakes queries (\u00a76)."
+    },
+    {
+      "module": "maestro.connectors.policy_fallback",
+      "path": "src/maestro/connectors/policy_fallback.py",
+      "package": "connectors",
+      "lines": 81,
+      "role": "Policy-aware fallback (blueprint \u00a76 \u2014 the \u2691 correction)."
+    },
+    {
+      "module": "maestro.connectors.providers.__init__",
+      "path": "src/maestro/connectors/providers/__init__.py",
+      "package": "connectors/providers",
+      "lines": 19,
+      "role": "Concrete provider connectors."
+    },
+    {
+      "module": "maestro.connectors.providers.anthropic",
+      "path": "src/maestro/connectors/providers/anthropic.py",
+      "package": "connectors/providers",
+      "lines": 96,
+      "role": "Anthropic Messages API connector."
+    },
+    {
+      "module": "maestro.connectors.providers.custom",
+      "path": "src/maestro/connectors/providers/custom.py",
+      "package": "connectors/providers",
+      "lines": 60,
+      "role": "User-registered external providers."
+    },
+    {
+      "module": "maestro.connectors.providers.http_base",
+      "path": "src/maestro/connectors/providers/http_base.py",
+      "package": "connectors/providers",
+      "lines": 162,
+      "role": "Shared HTTP plumbing for network-backed connectors."
+    },
+    {
+      "module": "maestro.connectors.providers.ollama",
+      "path": "src/maestro/connectors/providers/ollama.py",
+      "package": "connectors/providers",
+      "lines": 61,
+      "role": "Ollama connector for local model inference."
+    },
+    {
+      "module": "maestro.connectors.providers.openai",
+      "path": "src/maestro/connectors/providers/openai.py",
+      "package": "connectors/providers",
+      "lines": 63,
+      "role": "OpenAI Chat Completions connector (also the base for custom OpenAI-compatible providers such as vLLM, LM Studio, Together, Groq, OpenRouter, \u2026)."
+    },
+    {
+      "module": "maestro.connectors.providers.stub",
+      "path": "src/maestro/connectors/providers/stub.py",
+      "package": "connectors/providers",
+      "lines": 46,
+      "role": "Deterministic offline connector."
+    },
+    {
+      "module": "maestro.connectors.registry",
+      "path": "src/maestro/connectors/registry.py",
+      "package": "connectors",
+      "lines": 145,
+      "role": "Connector registry \u2014 register / enable / disable / resolve connectors."
+    },
+    {
+      "module": "maestro.connectors.routing",
+      "path": "src/maestro/connectors/routing.py",
+      "package": "connectors",
+      "lines": 93,
+      "role": "Latency-aware routing over the Provider Abstraction Layer (blueprint \u00a76)."
+    },
+    {
+      "module": "maestro.critique.__init__",
+      "path": "src/maestro/critique/__init__.py",
+      "package": "critique",
+      "lines": 51,
+      "role": "Hybrid Multi-Dimensional Critique (HMDC) \u2014 blueprint \u00a75."
+    },
+    {
+      "module": "maestro.critique.embedding",
+      "path": "src/maestro/critique/embedding.py",
+      "package": "critique",
+      "lines": 70,
+      "role": "Offline, deterministic embedding for Stage-2 semantic alignment."
+    },
+    {
+      "module": "maestro.critique.engine",
+      "path": "src/maestro/critique/engine.py",
+      "package": "critique",
+      "lines": 154,
+      "role": "The HMDC engine \u2014 four ordered, gated stages (blueprint \u00a75)."
+    },
+    {
+      "module": "maestro.critique.guardrails",
+      "path": "src/maestro/critique/guardrails.py",
+      "package": "critique",
+      "lines": 50,
+      "role": "Stage 1 \u2014 deterministic guardrails (the dispositive gate)."
+    },
+    {
+      "module": "maestro.critique.judge",
+      "path": "src/maestro/critique/judge.py",
+      "package": "critique",
+      "lines": 79,
+      "role": "Stage 3 \u2014 LLM-as-a-Judge with structured rubrics (cross-family)."
+    },
+    {
+      "module": "maestro.critique.types",
+      "path": "src/maestro/critique/types.py",
+      "package": "critique",
+      "lines": 120,
+      "role": "Shared types for the HMDC critique engine (blueprint \u00a75)."
+    },
+    {
+      "module": "maestro.domains.__init__",
+      "path": "src/maestro/domains/__init__.py",
+      "package": "domains",
+      "lines": 49,
+      "role": "Cross-domain architectural patterns (blueprint \u00a77)."
+    },
+    {
+      "module": "maestro.domains.packs",
+      "path": "src/maestro/domains/packs.py",
+      "package": "domains",
+      "lines": 95,
+      "role": "Domain packs \u2014 one control plane, four reasoning patterns (blueprint \u00a77)."
+    },
+    {
+      "module": "maestro.domains.verifiers",
+      "path": "src/maestro/domains/verifiers.py",
+      "package": "domains",
+      "lines": 229,
+      "role": "Cross-domain environmental verifiers (blueprint \u00a75.3 + \u00a77)."
+    },
+    {
+      "module": "maestro.experiments.__init__",
+      "path": "src/maestro/experiments/__init__.py",
+      "package": "experiments",
+      "lines": 2,
+      "role": "Reproduction experiments TC1 (Sec 6.2), TC2 (Sec 6.3), Table 4 (Sec 4.3.2)."
+    },
+    {
+      "module": "maestro.experiments.runner",
+      "path": "src/maestro/experiments/runner.py",
+      "package": "experiments",
+      "lines": 71,
+      "role": "Reproduce the paper end-to-end:"
+    },
+    {
+      "module": "maestro.experiments.summary",
+      "path": "src/maestro/experiments/summary.py",
+      "package": "experiments",
+      "lines": 80,
+      "role": "Summarizer for Table 4 (Sec 4.3.2) and Table 5 (Sec 6.3)."
+    },
+    {
+      "module": "maestro.experiments.tc1_dos",
+      "path": "src/maestro/experiments/tc1_dos.py",
+      "package": "experiments",
+      "lines": 249,
+      "role": "Test Case 1 \u2014 Resource Exhaustion via PCAP replay (Sec 6.2, Sec 6.3 TC1)."
+    },
+    {
+      "module": "maestro.experiments.tc2_memory_poison",
+      "path": "src/maestro/experiments/tc2_memory_poison.py",
+      "package": "experiments",
+      "lines": 90,
+      "role": "Test Case 2 \u2014 Memory / Knowledge-Base Poisoning (Sec 6.3 TC2)."
+    },
+    {
+      "module": "maestro.logging_setup",
+      "path": "src/maestro/logging_setup.py",
+      "package": ".",
+      "lines": 32,
+      "role": "Centralized structured logging (Sec 3 of reproduce.sh spec)."
+    },
+    {
+      "module": "maestro.maestro.__init__",
+      "path": "src/maestro/maestro/__init__.py",
+      "package": "maestro",
+      "lines": 2,
+      "role": "MAESTRO threat-modeling package (Section 4 of arXiv:2508.10043)."
+    },
+    {
+      "module": "maestro.maestro.layers",
+      "path": "src/maestro/maestro/layers.py",
+      "package": "maestro",
+      "lines": 74,
+      "role": "MAESTRO 7-layer architecture (Sec 4.1 of arXiv:2508.10043, Figure 3)."
+    },
+    {
+      "module": "maestro.maestro.mapping",
+      "path": "src/maestro/maestro/mapping.py",
+      "package": "maestro",
+      "lines": 47,
+      "role": "Mapping agentic agent modules to MAESTRO layers (Sec 4.2 Table 2)."
+    },
+    {
+      "module": "maestro.maestro.mitigation",
+      "path": "src/maestro/maestro/mitigation.py",
+      "package": "maestro",
+      "lines": 82,
+      "role": "Defense-in-depth mitigation registry (Sec 5.1-5.3, Figure 4)."
+    },
+    {
+      "module": "maestro.maestro.risk_score",
+      "path": "src/maestro/maestro/risk_score.py",
+      "package": "maestro",
+      "lines": 60,
+      "role": "Eq."
+    },
+    {
+      "module": "maestro.maestro.threats",
+      "path": "src/maestro/maestro/threats.py",
+      "package": "maestro",
+      "lines": 77,
+      "role": "Threat definitions (Sec 3.2 Table 1 + Sec 4.3.2 Table 4)."
+    },
+    {
+      "module": "maestro.memory.__init__",
+      "path": "src/maestro/memory/__init__.py",
+      "package": "memory",
+      "lines": 55,
+      "role": "Four-tier agent memory with quarantine, promotion, and isolation (Phase 3)."
+    },
+    {
+      "module": "maestro.memory.records",
+      "path": "src/maestro/memory/records.py",
+      "package": "memory",
+      "lines": 126,
+      "role": "Typed records for the four-tier memory architecture (Phase 3)."
+    },
+    {
+      "module": "maestro.memory.store",
+      "path": "src/maestro/memory/store.py",
+      "package": "memory",
+      "lines": 376,
+      "role": "The four-tier memory store \u2014 quarantine, promotion, isolation (Phase 3)."
+    },
+    {
+      "module": "maestro.orchestration.__init__",
+      "path": "src/maestro/orchestration/__init__.py",
+      "package": "orchestration",
+      "lines": 35,
+      "role": "Durable execution \u2014 the Orchestration Engine (blueprint \u00a72)."
+    },
+    {
+      "module": "maestro.orchestration.engine",
+      "path": "src/maestro/orchestration/engine.py",
+      "package": "orchestration",
+      "lines": 180,
+      "role": "Durable execution engine \u2014 offline Temporal-semantics (the Orchestration Engine)."
+    },
+    {
+      "module": "maestro.orchestration.journal",
+      "path": "src/maestro/orchestration/journal.py",
+      "package": "orchestration",
+      "lines": 91,
+      "role": "Event-sourced journal for durable execution (the Orchestration Engine)."
+    },
+    {
+      "module": "maestro.platform.__init__",
+      "path": "src/maestro/platform/__init__.py",
+      "package": "platform",
+      "lines": 46,
+      "role": "MAESTRO-SecOps agent platform \u2014 the live control loop."
+    },
+    {
+      "module": "maestro.platform.agent_platform",
+      "path": "src/maestro/platform/agent_platform.py",
+      "package": "platform",
+      "lines": 479,
+      "role": "The agent control loop:"
+    },
+    {
+      "module": "maestro.platform.blast_radius",
+      "path": "src/maestro/platform/blast_radius.py",
+      "package": "platform",
+      "lines": 64,
+      "role": "Blast-radius descriptor (blueprint \u00a72 \u2014 \"define and constrain the blast radius\")."
+    },
+    {
+      "module": "maestro.platform.demo",
+      "path": "src/maestro/platform/demo.py",
+      "package": "platform",
+      "lines": 111,
+      "role": "``maestro-agent`` \u2014 a runnable demo of the live enforcement loop."
+    },
+    {
+      "module": "maestro.platform.provisioning",
+      "path": "src/maestro/platform/provisioning.py",
+      "package": "platform",
+      "lines": 168,
+      "role": "Automatic agent provisioning (blueprint \u00a74.4) \u2014 secure by inheritance."
+    },
+    {
+      "module": "maestro.scripts.__init__",
+      "path": "src/maestro/scripts/__init__.py",
+      "package": "scripts",
+      "lines": 1,
+      "role": ""
+    },
+    {
+      "module": "maestro.scripts.bp0_audit",
+      "path": "src/maestro/scripts/bp0_audit.py",
+      "package": "scripts",
+      "lines": 459,
+      "role": "BP0 Truth Audit generator:"
+    },
+    {
+      "module": "maestro.scripts.validate_threats",
+      "path": "src/maestro/scripts/validate_threats.py",
+      "package": "scripts",
+      "lines": 31,
+      "role": "Sanity-check that ``configs/threats.yaml`` matches Eq."
+    },
+    {
+      "module": "maestro.security.__init__",
+      "path": "src/maestro/security/__init__.py",
+      "package": "security",
+      "lines": 134,
+      "role": "MAESTRO-SecOps security layer."
+    },
+    {
+      "module": "maestro.security.action",
+      "path": "src/maestro/security/action.py",
+      "package": "security",
+      "lines": 169,
+      "role": "Typed action-proposal schema (Enforcement Plane)."
+    },
+    {
+      "module": "maestro.security.audit",
+      "path": "src/maestro/security/audit.py",
+      "package": "security",
+      "lines": 51,
+      "role": "Phase-0 truth-audit CLI."
+    },
+    {
+      "module": "maestro.security.budget",
+      "path": "src/maestro/security/budget.py",
+      "package": "security",
+      "lines": 81,
+      "role": "Autonomy budget + rate limiting (Enforcement Plane)."
+    },
+    {
+      "module": "maestro.security.circuit_breaker",
+      "path": "src/maestro/security/circuit_breaker.py",
+      "package": "security",
+      "lines": 74,
+      "role": "Circuit breaker / loop detector (Enforcement Plane \u2014 operational safety)."
+    },
+    {
+      "module": "maestro.security.confidence",
+      "path": "src/maestro/security/confidence.py",
+      "package": "security",
+      "lines": 74,
+      "role": "Action confidence profile (Enforcement Plane)."
+    },
+    {
+      "module": "maestro.security.control_status",
+      "path": "src/maestro/security/control_status.py",
+      "package": "security",
+      "lines": 661,
+      "role": "Phase-0 \"Truth Audit\":"
+    },
+    {
+      "module": "maestro.security.critique_gate",
+      "path": "src/maestro/security/critique_gate.py",
+      "package": "security",
+      "lines": 135,
+      "role": "Pre-execution critique gate \u2014 HMDC/verifiers on the live boundary (L5 / BP7)."
+    },
+    {
+      "module": "maestro.security.enforcement",
+      "path": "src/maestro/security/enforcement.py",
+      "package": "security",
+      "lines": 463,
+      "role": "Policy Enforcement Point \u2014 the executor gateway (Enforcement Plane / L3)."
+    },
+    {
+      "module": "maestro.security.identity",
+      "path": "src/maestro/security/identity.py",
+      "package": "security",
+      "lines": 210,
+      "role": "Workload identity and scoped capability tokens (Enforcement Plane)."
+    },
+    {
+      "module": "maestro.security.ledger",
+      "path": "src/maestro/security/ledger.py",
+      "package": "security",
+      "lines": 142,
+      "role": "Tamper-evident audit ledger (Enforcement Plane / L5)."
+    },
+    {
+      "module": "maestro.security.metrics",
+      "path": "src/maestro/security/metrics.py",
+      "package": "security",
+      "lines": 60,
+      "role": "Operational security metrics, computed from the audit ledger."
+    },
+    {
+      "module": "maestro.security.perimeter",
+      "path": "src/maestro/security/perimeter.py",
+      "package": "security",
+      "lines": 314,
+      "role": "The dual-LLM injection perimeter (blueprint \u00a71 \u2014 the L1 input boundary)."
+    },
+    {
+      "module": "maestro.security.policy_bundle",
+      "path": "src/maestro/security/policy_bundle.py",
+      "package": "security",
+      "lines": 348,
+      "role": "Signed policy bundles + two-person change control (Governance Plane / L6)."
+    },
+    {
+      "module": "maestro.security.risk_engine",
+      "path": "src/maestro/security/risk_engine.py",
+      "package": "security",
+      "lines": 180,
+      "role": "Operational residual-risk model for MAESTRO-SecOps."
+    },
+    {
+      "module": "maestro.security.sandbox",
+      "path": "src/maestro/security/sandbox.py",
+      "package": "security",
+      "lines": 162,
+      "role": "Executor sandbox \u2014 confining the side effect at the boundary (L3 / BP4)."
+    },
+    {
+      "module": "maestro.server.__init__",
+      "path": "src/maestro/server/__init__.py",
+      "package": "server",
+      "lines": 2,
+      "role": "FastAPI server + WebSocket telemetry (Sec 3.1, 6.1)."
+    },
+    {
+      "module": "maestro.server.app",
+      "path": "src/maestro/server/app.py",
+      "package": "server",
+      "lines": 127,
+      "role": "FastAPI + WebSocket backend (Sec 3.1, Sec 6.1 \u300cFastAPI framework\u300d)."
+    },
+    {
+      "module": "maestro.server.auth",
+      "path": "src/maestro/server/auth.py",
+      "package": "server",
+      "lines": 348,
+      "role": "Zero-trust authentication + RBAC for the control-plane API (CTRL-L4-03, BP3.1)."
+    },
+    {
+      "module": "maestro.server.connectors_api",
+      "path": "src/maestro/server/connectors_api.py",
+      "package": "server",
+      "lines": 387,
+      "role": "FastAPI router + in-memory stores for the model-testing dashboard."
+    },
+    {
+      "module": "maestro.server.control_api",
+      "path": "src/maestro/server/control_api.py",
+      "package": "server",
+      "lines": 322,
+      "role": "REST API that drives the *real* control plane behind the web control panel."
+    },
+    {
+      "module": "maestro.server.control_panel",
+      "path": "src/maestro/server/control_panel.py",
+      "package": "server",
+      "lines": 377,
+      "role": "The operator control panel \u2014 a self-contained, offline single-page app."
+    },
+    {
+      "module": "maestro.server.dashboard",
+      "path": "src/maestro/server/dashboard.py",
+      "package": "server",
+      "lines": 55,
+      "role": "Remote Operator Dashboard (Sec 3.1 Interactive Dashboard)."
+    },
+    {
+      "module": "maestro.server.playground",
+      "path": "src/maestro/server/playground.py",
+      "package": "server",
+      "lines": 322,
+      "role": "Self-contained model-testing dashboard served at ``/playground``."
+    },
+    {
+      "module": "maestro.telemetry.__init__",
+      "path": "src/maestro/telemetry/__init__.py",
+      "package": "telemetry",
+      "lines": 2,
+      "role": "Telemetry pipeline + protocol layers (Sec 3.1 of arXiv:2508.10043)."
+    },
+    {
+      "module": "maestro.telemetry.capture",
+      "path": "src/maestro/telemetry/capture.py",
+      "package": "telemetry",
+      "lines": 40,
+      "role": "PacketCapture module (Sec 3.1)."
+    },
+    {
+      "module": "maestro.telemetry.detection",
+      "path": "src/maestro/telemetry/detection.py",
+      "package": "telemetry",
+      "lines": 60,
+      "role": "Security Detection Module (Sec 3.1)."
+    },
+    {
+      "module": "maestro.telemetry.performance",
+      "path": "src/maestro/telemetry/performance.py",
+      "package": "telemetry",
+      "lines": 83,
+      "role": "Performance Analysis Module (Sec 3.1)."
+    }
+  ]
+}

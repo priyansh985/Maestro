@@ -1,0 +1,238 @@
+{
+  "schema_version": "1.0",
+  "endpoint_count": 33,
+  "mutating_count": 18,
+  "endpoints": [
+    {
+      "method": "GET",
+      "route": "/",
+      "mutating": false,
+      "source": "src/maestro/server/app.py",
+      "auth": "public (health / reference / static shell / websocket)"
+    },
+    {
+      "method": "GET",
+      "route": "/control",
+      "mutating": false,
+      "source": "src/maestro/server/app.py",
+      "auth": "public (health / reference / static shell / websocket)"
+    },
+    {
+      "method": "GET",
+      "route": "/healthz",
+      "mutating": false,
+      "source": "src/maestro/server/app.py",
+      "auth": "public (health / reference / static shell / websocket)"
+    },
+    {
+      "method": "GET",
+      "route": "/playground",
+      "mutating": false,
+      "source": "src/maestro/server/app.py",
+      "auth": "public (health / reference / static shell / websocket)"
+    },
+    {
+      "method": "GET",
+      "route": "/risk",
+      "mutating": false,
+      "source": "src/maestro/server/app.py",
+      "auth": "public (health / reference / static shell / websocket)"
+    },
+    {
+      "method": "POST",
+      "route": "/chat",
+      "mutating": true,
+      "source": "src/maestro/server/connectors_api.py",
+      "auth": "OPERATOR (bearer token + RBAC + rate limit, CTRL-L4-03/07)"
+    },
+    {
+      "method": "GET",
+      "route": "/connectors",
+      "mutating": false,
+      "source": "src/maestro/server/connectors_api.py",
+      "auth": "VIEWER (bearer token + RBAC + rate limit, CTRL-L4-03/07)"
+    },
+    {
+      "method": "POST",
+      "route": "/connectors",
+      "mutating": true,
+      "source": "src/maestro/server/connectors_api.py",
+      "auth": "OPERATOR (bearer token + RBAC + rate limit, CTRL-L4-03/07)"
+    },
+    {
+      "method": "DELETE",
+      "route": "/connectors/{name}",
+      "mutating": true,
+      "source": "src/maestro/server/connectors_api.py",
+      "auth": "OPERATOR (bearer token + RBAC + rate limit, CTRL-L4-03/07)"
+    },
+    {
+      "method": "POST",
+      "route": "/connectors/{name}/default",
+      "mutating": true,
+      "source": "src/maestro/server/connectors_api.py",
+      "auth": "OPERATOR (bearer token + RBAC + rate limit, CTRL-L4-03/07)"
+    },
+    {
+      "method": "POST",
+      "route": "/connectors/{name}/disable",
+      "mutating": true,
+      "source": "src/maestro/server/connectors_api.py",
+      "auth": "OPERATOR (bearer token + RBAC + rate limit, CTRL-L4-03/07)"
+    },
+    {
+      "method": "POST",
+      "route": "/connectors/{name}/enable",
+      "mutating": true,
+      "source": "src/maestro/server/connectors_api.py",
+      "auth": "OPERATOR (bearer token + RBAC + rate limit, CTRL-L4-03/07)"
+    },
+    {
+      "method": "POST",
+      "route": "/connectors/{name}/health",
+      "mutating": true,
+      "source": "src/maestro/server/connectors_api.py",
+      "auth": "OPERATOR (bearer token + RBAC + rate limit, CTRL-L4-03/07)"
+    },
+    {
+      "method": "DELETE",
+      "route": "/logs",
+      "mutating": true,
+      "source": "src/maestro/server/connectors_api.py",
+      "auth": "OPERATOR (bearer token + RBAC + rate limit, CTRL-L4-03/07)"
+    },
+    {
+      "method": "GET",
+      "route": "/logs",
+      "mutating": false,
+      "source": "src/maestro/server/connectors_api.py",
+      "auth": "VIEWER (bearer token + RBAC + rate limit, CTRL-L4-03/07)"
+    },
+    {
+      "method": "POST",
+      "route": "/logs/{log_id}/verify",
+      "mutating": true,
+      "source": "src/maestro/server/connectors_api.py",
+      "auth": "OPERATOR (bearer token + RBAC + rate limit, CTRL-L4-03/07)"
+    },
+    {
+      "method": "GET",
+      "route": "/testcases",
+      "mutating": false,
+      "source": "src/maestro/server/connectors_api.py",
+      "auth": "VIEWER (bearer token + RBAC + rate limit, CTRL-L4-03/07)"
+    },
+    {
+      "method": "POST",
+      "route": "/testcases",
+      "mutating": true,
+      "source": "src/maestro/server/connectors_api.py",
+      "auth": "OPERATOR (bearer token + RBAC + rate limit, CTRL-L4-03/07)"
+    },
+    {
+      "method": "DELETE",
+      "route": "/testcases/{cid}",
+      "mutating": true,
+      "source": "src/maestro/server/connectors_api.py",
+      "auth": "OPERATOR (bearer token + RBAC + rate limit, CTRL-L4-03/07)"
+    },
+    {
+      "method": "POST",
+      "route": "/testcases/{cid}/replay",
+      "mutating": true,
+      "source": "src/maestro/server/connectors_api.py",
+      "auth": "OPERATOR (bearer token + RBAC + rate limit, CTRL-L4-03/07)"
+    },
+    {
+      "method": "POST",
+      "route": "/alert",
+      "mutating": true,
+      "source": "src/maestro/server/control_api.py",
+      "auth": "OPERATOR (bearer token + RBAC + rate limit, CTRL-L4-03/07)"
+    },
+    {
+      "method": "GET",
+      "route": "/blast-radius",
+      "mutating": false,
+      "source": "src/maestro/server/control_api.py",
+      "auth": "VIEWER (bearer token + RBAC + rate limit, CTRL-L4-03/07)"
+    },
+    {
+      "method": "GET",
+      "route": "/controls",
+      "mutating": false,
+      "source": "src/maestro/server/control_api.py",
+      "auth": "VIEWER (bearer token + RBAC + rate limit, CTRL-L4-03/07)"
+    },
+    {
+      "method": "POST",
+      "route": "/critique",
+      "mutating": true,
+      "source": "src/maestro/server/control_api.py",
+      "auth": "OPERATOR (bearer token + RBAC + rate limit, CTRL-L4-03/07)"
+    },
+    {
+      "method": "POST",
+      "route": "/halt",
+      "mutating": true,
+      "source": "src/maestro/server/control_api.py",
+      "auth": "OPERATOR (bearer token + RBAC + rate limit, CTRL-L4-03/07)"
+    },
+    {
+      "method": "GET",
+      "route": "/layers",
+      "mutating": false,
+      "source": "src/maestro/server/control_api.py",
+      "auth": "VIEWER (bearer token + RBAC + rate limit, CTRL-L4-03/07)"
+    },
+    {
+      "method": "GET",
+      "route": "/ledger",
+      "mutating": false,
+      "source": "src/maestro/server/control_api.py",
+      "auth": "VIEWER (bearer token + RBAC + rate limit, CTRL-L4-03/07)"
+    },
+    {
+      "method": "GET",
+      "route": "/memory",
+      "mutating": false,
+      "source": "src/maestro/server/control_api.py",
+      "auth": "VIEWER (bearer token + RBAC + rate limit, CTRL-L4-03/07)"
+    },
+    {
+      "method": "GET",
+      "route": "/metrics",
+      "mutating": false,
+      "source": "src/maestro/server/control_api.py",
+      "auth": "VIEWER (bearer token + RBAC + rate limit, CTRL-L4-03/07)"
+    },
+    {
+      "method": "POST",
+      "route": "/perimeter",
+      "mutating": true,
+      "source": "src/maestro/server/control_api.py",
+      "auth": "OPERATOR (bearer token + RBAC + rate limit, CTRL-L4-03/07)"
+    },
+    {
+      "method": "POST",
+      "route": "/reset",
+      "mutating": true,
+      "source": "src/maestro/server/control_api.py",
+      "auth": "ADMIN (bearer token + RBAC + rate limit, CTRL-L4-03/07)"
+    },
+    {
+      "method": "POST",
+      "route": "/resume",
+      "mutating": true,
+      "source": "src/maestro/server/control_api.py",
+      "auth": "OPERATOR (bearer token + RBAC + rate limit, CTRL-L4-03/07)"
+    },
+    {
+      "method": "GET",
+      "route": "/state",
+      "mutating": false,
+      "source": "src/maestro/server/control_api.py",
+      "auth": "VIEWER (bearer token + RBAC + rate limit, CTRL-L4-03/07)"
+    }
+  ]
+}
