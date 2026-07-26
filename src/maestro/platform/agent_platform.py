@@ -21,14 +21,16 @@ from __future__ import annotations
 
 import os
 import secrets
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 
 from ..memory import MemoryScope, MemoryStore, MemoryTier
+from ..orchestration.journal import Journal
 from ..security.action import REVERSIBLE_INTENTS, ActionProposal
 from ..security.budget import AutonomyBudget
 from ..security.circuit_breaker import CircuitBreaker
 from ..security.confidence import ConfidenceSignals
+from ..security.critique_gate import HMDCGate, PreExecutionGate
 from ..security.enforcement import (
     Approver,
     EnforcementResult,
@@ -37,7 +39,9 @@ from ..security.enforcement import (
 )
 from ..security.identity import SIGNING_KEY_ENV, CapabilityIssuer
 from ..security.ledger import Ledger
+from ..security.policy_bundle import PolicyRegistry, genesis_registry
 from ..security.risk_engine import RiskInputs
+from ..security.sandbox import ExecutionSandbox, SandboxPolicy
 from ..telemetry.detection import Alert, AlertClass
 from .blast_radius import BlastRadius
 
@@ -76,6 +80,51 @@ def default_tool_adapters() -> dict[str, ToolAdapter]:
         "alert_operator": _effect("operator notified"),
         "rollback_telemetry": _effect("telemetry rolled back to checkpoint"),
     }
+
+
+def default_critique_gate() -> HMDCGate:
+    """The default pre-execution critique gate for the network-monitoring loop (BP7).
+
+    Composes the corrected HMDC engine (blueprint §5) with the network-monitoring
+    environmental verifier (§5.3) as its ``task_gate`` — the deterministic
+    "spinal cord" that vetoes a mitigation inappropriate for the observed alert —
+    and two cross-family stand-in judges so the engine's cross-family contract is
+    exercised on the live loop. The dispositive guardrails and the environmental
+    verifier are the operative hard gate; genuine judge disagreement routes to a
+    human (see :mod:`maestro.security.critique_gate`).
+    """
+    from ..critique import HMDCEngine, RubricJudge
+    from ..domains.verifiers import NetworkMitigationVerifier
+
+    engine = HMDCEngine(
+        judges=(RubricJudge("guardian-a"), RubricJudge("guardian-b")),
+        task_gate=NetworkMitigationVerifier(),
+    )
+    return HMDCGate(engine, family="network-monitor")
+
+
+def default_policy_registry(
+    allowed_intents: Iterable[str],
+    *,
+    key: bytes | str,
+    ledger: Ledger | None = None,
+    limits: Mapping[str, float] | None = None,
+) -> PolicyRegistry:
+    """The default signed policy bundle for the network-monitoring loop (CTRL-L6-03).
+
+    A v1 genesis bundle admitting exactly this agent's intent vocabulary, signed
+    with the platform's key so it shares the capability + ledger trust root. The
+    baseline ships with the platform; every subsequent change to the governed
+    allow-list requires a distinct second approver (see
+    :mod:`maestro.security.policy_bundle`).
+    """
+    return genesis_registry(
+        allowed_intents,
+        key=key,
+        ledger=ledger,
+        limits=limits,
+        provenance="genesis: platform-provisioned network-monitoring policy",
+    )
 
 
 def shadow_tool_adapters() -> dict[str, ToolAdapter]:
@@ -142,6 +191,12 @@ class AgentPlatform:
         allowed_intents: Iterable[str] | None = None,
         shadow: bool = False,
         capability_ttl_s: float = _DEFAULT_TTL_S,
+        journal_path: str | None = None,
+        sandbox_policy: SandboxPolicy | None = None,
+        critique_gate: PreExecutionGate | None = None,
+        enable_critique: bool = True,
+        policy_registry: PolicyRegistry | None = None,
+        enable_policy_bundle: bool = True,
     ) -> None:
         from ..agent.reasoning import StubReasoner
 
@@ -168,6 +223,57 @@ class AgentPlatform:
         self._budget = budget if budget is not None else AutonomyBudget(
             max_tool_calls=1000, window_seconds=60.0, max_calls_per_window=120)
         default_adapters = shadow_tool_adapters() if shadow else default_tool_adapters()
+        # Executor sandbox (BP4): confines every side effect (scope + output
+        # bounds) and journals it for durable exactly-once execution. In-memory
+        # by default (process-scoped exactly-once); pass ``journal_path`` for a
+        # file-backed journal that survives a real process crash.
+        self._journal = Journal(journal_path) if journal_path else Journal()
+        self._sandbox = ExecutionSandbox(policy=sandbox_policy, journal=self._journal)
+        # Pre-execution critique gate (BP7): the HMDC engine + environmental
+        # verifier run as the last check before every side effect. On by default
+        # (secure-by-default); pass enable_critique=False to restore the pre-BP7
+        # boundary, or a custom gate to swap the verifier/judges.
+        if not enable_critique:
+            self._gate: PreExecutionGate | None = None
+        elif critique_gate is not None:
+            self._gate = critique_gate
+        else:
+            self._gate = default_critique_gate()
+
+        # This agent's (possibly restricted) intent vocabulary. A restricted
+        # vocabulary is least-privilege: the agent holds no capability for intents
+        # outside it, so the gateway denies them — the mechanism behind
+        # secure-by-inheritance provisioning (see platform.provisioning). Computed
+        # up front because it seeds both the governed policy bundle and the
+        # delegated capabilities below.
+        vocabulary = tuple(_INTENT_RESOURCE) if allowed_intents is None else tuple(allowed_intents)
+        for intent in vocabulary:
+            if intent not in _INTENT_RESOURCE:
+                raise ValueError(
+                    f"intent {intent!r} is not in the platform vocabulary {tuple(_INTENT_RESOURCE)}")
+
+        resolved_breaker = breaker if breaker is not None else CircuitBreaker(
+            max_repeats=5, window_seconds=60.0)
+
+        # Governed policy bundle (CTRL-L6-03): the executor's effective intent
+        # allow-list is a signed, versioned, two-person-approved artifact — not
+        # merely static code. On by default with a genesis baseline admitting this
+        # agent's vocabulary; pass enable_policy_bundle=False to restore the
+        # ungoverned boundary, or a custom registry to drive real change control.
+        if not enable_policy_bundle:
+            self._policy: PolicyRegistry | None = None
+        elif policy_registry is not None:
+            self._policy = policy_registry
+        else:
+            self._policy = default_policy_registry(
+                vocabulary, key=resolved_key, ledger=self._ledger,
+                limits={
+                    "max_tool_calls": float(self._budget.max_tool_calls),
+                    "max_calls_per_window": float(self._budget.max_calls_per_window),
+                    "window_seconds": float(self._budget.window_seconds),
+                    "breaker_max_repeats": float(resolved_breaker.max_repeats),
+                })
+
         self._pep = PolicyEnforcementPoint(
             issuer=self._issuer,
             ledger=self._ledger,
@@ -176,23 +282,18 @@ class AgentPlatform:
             adapters=adapters if adapters is not None else default_adapters,
             approver=approver,
             budget=self._budget,
-            breaker=breaker if breaker is not None else CircuitBreaker(
-                max_repeats=5, window_seconds=60.0),
+            breaker=resolved_breaker,
+            sandbox=self._sandbox,
+            pre_execution_gate=self._gate,
+            policy_registry=self._policy,
         )
 
         # Capabilities delegated to this agent by its human controller, one per
-        # operational intent in this agent's (possibly restricted) vocabulary.
-        # A restricted vocabulary is least-privilege: the agent simply holds no
-        # capability for intents outside it, so the gateway denies them — which
-        # is what makes provisioning secure-by-inheritance (see platform.provisioning).
+        # operational intent in this agent's vocabulary.
         from ..security.action import INTENT_REGISTRY
 
-        vocabulary = tuple(_INTENT_RESOURCE) if allowed_intents is None else tuple(allowed_intents)
         self._caps = {}
         for intent in vocabulary:
-            if intent not in _INTENT_RESOURCE:
-                raise ValueError(
-                    f"intent {intent!r} is not in the platform vocabulary {tuple(_INTENT_RESOURCE)}")
             resource = _INTENT_RESOURCE[intent]
             capability = INTENT_REGISTRY[intent][1]
             self._caps[intent] = self._issuer.issue(
@@ -208,6 +309,17 @@ class AgentPlatform:
     @property
     def pep(self) -> PolicyEnforcementPoint:
         return self._pep
+
+    @property
+    def policy(self) -> PolicyRegistry | None:
+        """The signed policy-bundle registry gating the executor allow-list, or
+        ``None`` when the governed policy bundle is disabled (CTRL-L6-03)."""
+        return self._policy
+
+    @property
+    def journal(self) -> Journal:
+        """The durable-execution journal backing exactly-once side effects."""
+        return self._journal
 
     @property
     def shadow(self) -> bool:
@@ -310,10 +422,21 @@ class AgentPlatform:
         token = self._caps.get(intent)
         idem = f"{alert_key}:{intent}"
 
+        # 3b. Environmental facts for the pre-execution critique gate (BP7): the
+        #     observed alert class (the ground truth the mitigation is checked
+        #     against) and the detection detail as grounding for the semantic
+        #     stage. These are environment facts, not model self-report.
+        verification_context = {
+            "alert_class": alert.cls.value,
+            "severity": alert.severity,
+            "grounding": (f"{alert.cls.value}: {alert.detail}",),
+        }
+
         # 4. The enforcement point is the ONLY path to a side effect.
         enforcement = self._pep.submit_raw(
             raw, token=token, risk=risk, actor=self._agent_id,
-            confidence=confidence, idempotency_key=idem)
+            confidence=confidence, idempotency_key=idem,
+            verification_context=verification_context)
         return PlatformResult(alert.cls.value, intent, enforcement)
 
 

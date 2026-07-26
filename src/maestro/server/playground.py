@@ -164,7 +164,7 @@ const api = async (path, opts) => {
 };
 $('token').onclick = () => {
   const cur = localStorage.getItem('maestro_token') || '';
-  const v = prompt('API token (blank to clear; needed only when the server sets MAESTRO_API_TOKEN):', cur);
+  const v = prompt('API bearer token (blank to clear; needed when mitigation.zero_trust_api is on):', cur);
   if (v === null) return;
   if (v) localStorage.setItem('maestro_token', v); else localStorage.removeItem('maestro_token');
   loadConnectors(); loadLogs();

@@ -49,6 +49,7 @@ maestro-validate = "maestro.cli:cli_validate"
 maestro-reproduce = "maestro.experiments.runner:main"
 maestro-audit = "maestro.security.audit:main"
 maestro-agent = "maestro.platform.demo:main"
+maestro-bp0-audit = "maestro.scripts.bp0_audit:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
@@ -70,6 +71,12 @@ extend-select = ["I", "UP", "B", "SIM", "C4"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["B011"]
+# B008 (no function call in an argument default) is a known false positive for
+# FastAPI's dependency-injection idiom `param: T = Depends(...)`, which is the
+# documented, intended pattern for arg-level DI. control_api.py uses arg-level
+# Depends for per-endpoint tenant-plane resolution (the isolation choke point);
+# the call is FastAPI's DI marker, not eager evaluation.
+"src/maestro/server/control_api.py" = ["B008"]
 
 [tool.mypy]
 python_version = "3.10"

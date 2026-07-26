@@ -32,8 +32,10 @@ from .action import ActionProposal, InvalidProposal, parse_proposal
 from .budget import AutonomyBudget, BudgetError
 from .circuit_breaker import CircuitBreaker
 from .confidence import ConfidenceBand, ConfidenceSignals, action_confidence, confidence_band
+from .critique_gate import PreExecutionGate
 from .identity import CapabilityError, CapabilityIssuer, CapabilityToken
 from .ledger import Ledger
+from .policy_bundle import PolicyChangeError, PolicyRegistry
 from .risk_engine import (
     WEIGHTS,
     Control,
@@ -43,6 +45,7 @@ from .risk_engine import (
     residual_risk,
     uncertainty_adjusted,
 )
+from .sandbox import ExecutionSandbox, SandboxViolation
 
 
 class ActionState(str, Enum):
@@ -115,6 +118,9 @@ class PolicyEnforcementPoint:
         approver: Approver | None = None,
         budget: AutonomyBudget | None = None,
         breaker: CircuitBreaker | None = None,
+        sandbox: ExecutionSandbox | None = None,
+        pre_execution_gate: PreExecutionGate | None = None,
+        policy_registry: PolicyRegistry | None = None,
     ) -> None:
         self._issuer = issuer
         self._ledger = ledger
@@ -124,6 +130,20 @@ class PolicyEnforcementPoint:
         self._approver = approver
         self._budget = budget
         self._breaker = breaker
+        # Governed policy allow-list (CTRL-L6-03): the signed, two-person-approved
+        # policy bundle whose intent allow-list is verified at this boundary
+        # before every side effect. Optional — when None the boundary behaves as
+        # before (the static INTENT_REGISTRY allow-list still applies upstream).
+        self._policy = policy_registry
+        # Pre-execution critique gate (BP7): runs the proposed action through the
+        # HMDC engine + environmental verifier as the last check before the side
+        # effect. Optional — when None the boundary behaves exactly as before.
+        self._gate = pre_execution_gate
+        # The executor sandbox confines the side effect (scope + output bounds)
+        # and provides durable exactly-once replay. Default-constructed so the
+        # confinement is non-optional on every executed action; callers pass a
+        # journal-backed sandbox for cross-crash durability.
+        self._sandbox = sandbox if sandbox is not None else ExecutionSandbox()
         self._halted = False
         #: idempotency key -> event_id of the action that already executed it.
         self._executed_keys: dict[str, str] = {}
@@ -153,6 +173,7 @@ class PolicyEnforcementPoint:
         cost: float = 0.0,
         affected: int = 0,
         idempotency_key: str | None = None,
+        verification_context: dict | None = None,
     ) -> EnforcementResult:
         """Parse untrusted model output, then authorize + execute."""
         try:
@@ -164,7 +185,7 @@ class PolicyEnforcementPoint:
         return self.authorize_and_execute(
             proposal, token=token, risk=risk, actor=actor, controls=controls,
             confidence=confidence, cost=cost, affected=affected,
-            idempotency_key=idempotency_key)
+            idempotency_key=idempotency_key, verification_context=verification_context)
 
     def authorize_and_execute(
         self,
@@ -178,6 +199,7 @@ class PolicyEnforcementPoint:
         cost: float = 0.0,
         affected: int = 0,
         idempotency_key: str | None = None,
+        verification_context: dict | None = None,
     ) -> EnforcementResult:
         input_hash = proposal.content_hash()
 
@@ -268,14 +290,66 @@ class PolicyEnforcementPoint:
             except BudgetError as exc:
                 return deny("budget", str(exc), decision, residual, state=ActionState.ESCALATED)
 
+        # 8.5 Governed policy allow-list (CTRL-L6-03). The set of permitted
+        #     intents is not merely whatever the code registry says — it is a
+        #     signed, versioned, two-person-approved policy bundle whose integrity
+        #     is re-verified here, at the boundary, before every side effect. A
+        #     tampered/absent active bundle, or an intent the active policy does
+        #     not permit, fails closed.
+        if self._policy is not None:
+            try:
+                bundle = self._policy.active().bundle
+            except PolicyChangeError as exc:
+                return deny("policy_bundle", f"no valid active policy: {exc}",
+                            _most_restrictive(decision, Decision.DENY_AUTONOMOUS), residual)
+            if not bundle.permits(proposal.intent):
+                return deny(
+                    "policy_bundle",
+                    f"intent {proposal.intent!r} not permitted by active policy bundle "
+                    f"v{bundle.version}",
+                    _most_restrictive(decision, Decision.DENY_AUTONOMOUS), residual)
+
         # 9. Allow-listed adapter (the executor only speaks a bounded vocabulary).
         adapter = self._adapters.get(proposal.intent)
         if adapter is None:
             return deny("adapter", f"no adapter for intent {proposal.intent!r}", decision, residual)
 
-        # 10. Sandboxed execution + postcondition verification.
+        # 9.5 Pre-execution critique gate (BP7) — the last check before the side
+        #     effect. Runs the proposed action through the HMDC engine + the
+        #     environmental verifier. A deterministic guardrail/verifier failure
+        #     denies autonomously; probabilistic judge uncertainty routes to a
+        #     human (the existing approver). Fail-closed if the gate itself errors.
+        gate_detail: dict | None = None
+        if self._gate is not None:
+            try:
+                outcome = self._gate(proposal, verification_context or {})
+            except Exception as exc:  # noqa: BLE001 — a gate failure fails closed.
+                return deny("critique", f"critique gate raised: {exc}", decision, residual)
+            gate_detail = outcome.detail
+            if not outcome.allow:
+                if outcome.escalate:
+                    approved = bool(
+                        self._approver and self._approver(proposal, decision, residual))
+                    if not approved:
+                        return deny(
+                            "critique", f"routed to human [{outcome.verdict}]: {outcome.reason}",
+                            _most_restrictive(decision, Decision.REQUIRE_APPROVAL), residual,
+                            state=ActionState.ESCALATED, detail={"critique": gate_detail})
+                else:
+                    return deny(
+                        "critique", f"{outcome.verdict}: {outcome.reason}",
+                        _most_restrictive(decision, Decision.DENY_AUTONOMOUS), residual,
+                        detail={"critique": gate_detail})
+
+        # 10. Sandboxed execution + postcondition verification. The sandbox
+        #     confines the side effect (scope + output bounds) and replays a
+        #     journaled result exactly-once across a crash; any breach or adapter
+        #     failure fails closed.
         try:
-            output = adapter(proposal)
+            output, replayed = self._sandbox.run(
+                adapter, proposal, idempotency_key=idempotency_key)
+        except SandboxViolation as exc:
+            return deny("sandbox", str(exc), decision, residual)
         except Exception as exc:  # noqa: BLE001 — any adapter failure fails closed.
             return deny("execution", f"adapter raised: {exc}", decision, residual)
         if not isinstance(output, dict) or not output.get("ok", False):
@@ -296,7 +370,8 @@ class PolicyEnforcementPoint:
             risk_before=uncertainty_adjusted(risk),
             risk_after=residual,
             detail={"intent": proposal.intent, "target": proposal.target,
-                    "output": output, "decision_card": card},
+                    "output": output, "replayed": replayed,
+                    "critique": gate_detail, "decision_card": card},
         )
         if idempotency_key:
             self._executed_keys[idempotency_key] = event.event_id

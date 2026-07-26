@@ -209,6 +209,24 @@ CONTROLS: list[Control] = [
               "per-alert idempotency key); budget consumed only on executed "
               "actions.",
     ),
+    Control(
+        "CTRL-L3-04", "Executor sandbox — scope + output confinement at the side-effect boundary", "L3",
+        Status.VERIFIED, "enabled",
+        "platform/agent_platform.py:AgentPlatform -> PolicyEnforcementPoint (sandbox default-on)",
+        "security/sandbox.py:ExecutionSandbox",
+        "tests/test_sandbox.py + tests/test_platform.py",
+        notes="BP4 build: every authorized side effect runs through an in-process "
+              "ExecutionSandbox at the executor (default-on, non-optional). The "
+              "adapter result must be a JSON dict within a byte cap and may not "
+              "claim a target outside the authorized proposal scope; any breach "
+              "fails closed (deny 'sandbox') and is audited. Enforced on the "
+              "AgentPlatform live loop and adversarially tested (out-of-scope "
+              "target, oversized and non-serializable output, and an opt-in "
+              "wall-clock timeout all denied). Honest boundary: this is in-process "
+              "scope/output confinement, NOT kernel-level isolation - an in-process "
+              "wrapper cannot force-kill a thread or contain syscalls, so OS-level "
+              "sandboxing (gVisor/Firecracker) remains the documented seam (TB5).",
+    ),
     # L4 — Infrastructure
     Control(
         "CTRL-L4-01", "Connector fallback / graceful degradation", "L4",
@@ -225,11 +243,30 @@ CONTROLS: list[Control] = [
         notes="Per-provider API-key/header auth; keys from env, never persisted.",
     ),
     Control(
-        "CTRL-L4-03", "Server auth / rate limiting / zero-trust API", "L4",
-        Status.DECLARED, "disabled", None,
-        None, None,
-        notes="Target control (Phase 1): FastAPI is currently unauthenticated; "
-              "config mitigation.zero_trust_api=false.",
+        "CTRL-L4-03", "Zero-trust API front door (auth + RBAC, whole /api surface)", "L4",
+        Status.VERIFIED, "enabled",
+        "server/auth.py:require_role on the control_api AND connectors_api routers "
+        "(guards the live PEP-driving surface and the model-testing surface)",
+        "server/auth.py:AuthService + require_role",
+        "tests/test_api_auth.py",
+        notes="BP3.1 + BP3.2 build: every /api route requires a signed HMAC bearer "
+              "token and a sufficient role (viewer<operator<admin), fails closed. "
+              "The principal's tenant claim is authenticated (signed) and drives "
+              "structural per-tenant isolation of the control plane (CTRL-L4-08). "
+              "BP3.2 extended the SAME boundary over the "
+              "model-testing/connectors API (previously auth=NONE): reads require "
+              "VIEWER, every mutation OPERATOR - closing the confused-deputy egress "
+              "path where an unauthenticated caller could register a custom "
+              "connector at an arbitrary URL. Enforced by default "
+              "(mitigation.zero_trust_api=true; set false to restore the paper's "
+              "unauthenticated baseline). Adversarially tested "
+              "(missing/malformed/forged/expired/revoked tokens and "
+              "under-privileged role all denied on both routers; cross-tenant "
+              "isolation is proven under CTRL-L4-08) - hence 'verified'. This "
+              "gates the API front door, NOT the PEP "
+              "execution boundary (so it is not counted in boundary_enforced). "
+              "Per-principal rate limiting is now built (CTRL-L4-07); OIDC/SSO "
+              "login and an external RBAC/ABAC store remain production seams.",
     ),
     Control(
         "CTRL-L4-04", "Circuit breaker / runaway-loop detection", "L4",
@@ -244,18 +281,25 @@ CONTROLS: list[Control] = [
     ),
     Control(
         "CTRL-L4-05", "Durable execution / exactly-once orchestration", "L4",
-        Status.IMPLEMENTED, "enabled", None,
-        "orchestration/engine.py:DurableEngine", "tests/test_orchestration.py",
-        notes="Phase-2 build: an offline, deterministic realization of "
-              "Temporal-style durable execution — an event-sourced journal "
-              "replays completed activities after a crash so a side effect runs "
-              "exactly once, with retries/backoff, timeouts, and replay-divergence "
-              "detection. Adversarially tested (exactly-once across a simulated "
-              "crash, file-backed cross-process recovery, non-deterministic "
-              "replay caught); a durable agent run is demonstrated using the PEP "
-              "as an activity. Rated 'implemented' (component): durable mode is "
-              "not yet the default runtime for the live loop, and production would "
-              "back this with Temporal.io rather than the in-repo engine.",
+        Status.TESTED, "enabled",
+        "platform/agent_platform.py:AgentPlatform (executor runs every side effect "
+        "as a journaled activity)",
+        "orchestration/engine.py:DurableEngine + security/sandbox.py:ExecutionSandbox",
+        "tests/test_orchestration.py + tests/test_sandbox.py + tests/test_platform.py",
+        notes="BP4 wiring: the exactly-once mechanism is now ON THE LIVE LOOP by "
+              "default. The executor sandbox journals every side effect keyed by "
+              "the action's idempotency key and REPLAYS a recorded result instead "
+              "of re-invoking the adapter, so a crash-and-retry cannot "
+              "double-execute a mitigation. With the default in-memory journal the "
+              "guard is process-scoped; AgentPlatform(journal_path=...) uses a "
+              "file-backed journal that survives real process death - proven by a "
+              "simulated-restart test where a fresh platform over the same on-disk "
+              "journal replays the side effect exactly once. The standalone "
+              "DurableEngine (event-sourced replay, retries/backoff, timeouts, "
+              "replay-divergence detection) remains and is adversarially tested. "
+              "Rated 'tested' (not 'verified'): the boundary mechanism and "
+              "file-backed durability are tested; production would back the "
+              "journal with Temporal.io rather than the in-repo engine.",
     ),
     Control(
         "CTRL-L4-06", "Policy-aware fallback (fail-closed degradation)", "L4",
@@ -270,6 +314,49 @@ CONTROLS: list[Control] = [
               "degrades freely; high-stakes refuses to drop below its tier). A "
               "connector-layer control (not on the default offline agent loop, "
               "which uses the deterministic stub reasoner).",
+    ),
+    Control(
+        "CTRL-L4-07", "Per-principal API request rate limiting (front-door abuse control)", "L4",
+        Status.TESTED, "enabled",
+        "server/auth.py:enforce_rate_limit on the control_api + connectors_api routers",
+        "server/auth.py:RateLimiter",
+        "tests/test_api_auth.py",
+        notes="BP3.2 build: a deterministic token-bucket limiter keyed per "
+              "principal (tenant:subject) bounds inbound requests on the whole "
+              "/api surface and fails closed with HTTP 429 when a bucket is "
+              "exhausted, so one credential's burst cannot starve another "
+              "principal or the plane. Tested (bucket exhaustion returns 429, "
+              "continuous refill re-admits, and each principal has an independent "
+              "bucket). Distinct from CTRL-L3-03 (the agent autonomy budget on the "
+              "live loop) — this is a front-door (TB0) availability control, so it "
+              "is NOT counted in boundary_enforced. Enforced by default "
+              "(mitigation.api_rate_limit_per_min=120; <=0 disables; inert when "
+              "zero_trust_api is false). A shared (Redis) store so the limit holds "
+              "across replicas is the documented production seam.",
+    ),
+    Control(
+        "CTRL-L4-08", "Structural multi-tenant isolation (per-tenant control planes)", "L4",
+        Status.VERIFIED, "enabled",
+        "server/control_api.py:_TenantPlanes.for_tenant (routes each principal to "
+        "its own AgentPlatform+Ledger instance; the sole choke point to live state)",
+        "server/control_api.py:_TenantPlanes + viewer_plane/operator_plane/admin_plane",
+        "tests/test_tenant_isolation.py",
+        notes="BP3.3 build: the control plane is partitioned by tenant. Each "
+              "tenant gets its own live AgentPlatform (memory scope (tenant, "
+              "agent)), ledger, memory, budget and breaker, created lazily and "
+              "reached ONLY through _TenantPlanes.for_tenant keyed by the "
+              "authenticated (signed) principal.tenant claim. Isolation is "
+              "structural, not a per-call check: a principal for tenant A reaches "
+              "a different object graph than tenant B, so there is no shared table "
+              "to leak through and no scope argument to forget - and /reset only "
+              "ever rebuilds the caller's own tenant's plane. Adversarially tested "
+              "(a principal cannot read another tenant's ledger/memory/state/"
+              "metrics via ANY route, and cannot reset another tenant's plane; a "
+              "spoofed tenant claim fails the token signature). This is a "
+              "front-door / data-partition boundary (TB0/TB8), NOT the PEP "
+              "execution boundary, so it is not counted in boundary_enforced. "
+              "Postgres row-level security is the single-database variant of the "
+              "same guarantee and remains the production seam.",
     ),
     # L5 — Observability / evaluation
     Control(
@@ -325,19 +412,31 @@ CONTROLS: list[Control] = [
               "omitted (no goal labels / memory subsystem yet), not faked.",
     ),
     Control(
-        "CTRL-L5-06", "HMDC critique / evaluation harness", "L5",
-        Status.IMPLEMENTED, "enabled", None,
-        "critique/engine.py:HMDCEngine", "tests/test_critique.py",
-        notes="Phase-5 build (blueprint §5): a four-stage *gated* critique — "
-              "deterministic guardrails (dispositive hard-fail), a semantic "
-              "alignment floor, cross-family judges only, and a variance-aware "
-              "ensemble that routes disagreement to a human. It does NOT average "
-              "the stages (no fixed judge weighting), never lets a probabilistic "
-              "judge override a deterministic gate, and counters verbosity "
-              "(length-normalization) and position (both-orders comparison) bias. "
-              "The offline judge/embedder are deterministic stand-ins for "
-              "connector-backed cross-family models. Rated 'implemented': an "
-              "evaluation harness, not wired to gate live actions.",
+        "CTRL-L5-06", "HMDC gated critique at the side-effect boundary", "L5",
+        Status.TESTED, "enabled",
+        "platform/agent_platform.py:AgentPlatform -> PolicyEnforcementPoint "
+        "(pre-execution critique gate default-on)",
+        "critique/engine.py:HMDCEngine + security/critique_gate.py:HMDCGate",
+        "tests/test_critique.py + tests/test_critique_gate.py + tests/test_platform.py",
+        notes="BP7 wiring: the four-stage *gated* HMDC critique (blueprint §5) now "
+              "runs as the LAST check before every side effect on the live loop. "
+              "Its DETERMINISTIC stages gate autonomously — dispositive guardrails "
+              "(a justification that leaks a secret/PII is REJECTed at the boundary "
+              "before execution, tested end-to-end) and the environmental verifier "
+              "(CTRL-L5-08) — while a probabilistic-judge disagreement / "
+              "uncertainty ROUTES TO A HUMAN (escalates to the approver) rather "
+              "than autonomously denying on a stand-in score. It never averages "
+              "the stages and never lets a judge override a deterministic gate. "
+              "Honest limit: the judge/embedder are deterministic lexical "
+              "stand-ins, so on the live loop the semantic/ensemble thresholds are "
+              "permissive and the operative HARD gate is the guardrail + "
+              "environmental-verifier pair; the engine's CONTRACT (cross-family "
+              "only, variance-aware, route-uncertainty-to-human) is enforced and "
+              "tested — including a no-cross-family-judge routing case and the "
+              "PEP escalate/deny mapping. Rated 'tested' not 'verified': the "
+              "deterministic gates and the routing contract are tested at the "
+              "boundary; a connector-backed cross-family judge would tighten the "
+              "probabilistic thresholds.",
     ),
     Control(
         "CTRL-L5-07", "Shadow-mode evaluation (execution withheld)", "L5",
@@ -351,19 +450,27 @@ CONTROLS: list[Control] = [
               "evaluation metrics. Rated 'implemented' (a mode, not the default).",
     ),
     Control(
-        "CTRL-L5-08", "Cross-domain environmental verifiers (task_gate)", "L5",
-        Status.IMPLEMENTED, "enabled", None,
-        "domains/verifiers.py + critique/engine.py:HMDCEngine.task_gate",
-        "tests/test_domains.py",
-        notes="Phase-5/§7 build: the four domain packs supply deterministic "
-              "environmental verifiers — test-suite (software), reconciliation "
-              "(finance), citation-grounding (health/legal), safety-envelope "
-              "(robotics). This is the 'strongest correctness signal' the "
-              "blueprint §5.3 pipeline calls for, and it closes the earlier §5 "
-              "gap: a verifier is wired into HMDCEngine as a task_gate that runs "
-              "BEFORE the probabilistic judges and short-circuits a verification "
-              "failure (a fact the judges cannot override). Tested per domain + "
-              "end-to-end through HMDC. Component of the evaluation harness.",
+        "CTRL-L5-08", "Environmental verifier veto at the side-effect boundary", "L5",
+        Status.VERIFIED, "enabled",
+        "platform/agent_platform.py:AgentPlatform -> PolicyEnforcementPoint "
+        "(pre-execution critique gate default-on)",
+        "domains/verifiers.py:NetworkMitigationVerifier + security/critique_gate.py:HMDCGate",
+        "tests/test_domains.py + tests/test_critique_gate.py + tests/test_platform.py",
+        notes="BP7 wiring: the 'strongest correctness signal' (blueprint §5.3) now "
+              "gates the LIVE LOOP. Before any side effect, the deterministic "
+              "NetworkMitigationVerifier checks the proposed mitigation against a "
+              "fixed policy matrix keyed by the OBSERVED alert class — without "
+              "consulting the model — and vetoes anything inappropriate/unsafe: "
+              "raising detection thresholds during a DoS (which would blind the "
+              "detector mid-attack) or acting on a benign baseline are denied at "
+              "the executor even though capability, risk, budget and breaker all "
+              "pass. A veto is a fact, so it short-circuits the probabilistic "
+              "judges and denies autonomously (deny 'critique'). Default-on "
+              "(enable_critique=True); adversarially tested on the live loop "
+              "(unsafe mitigation and baseline-action both vetoed) — hence "
+              "'verified'. The four cross-domain verifiers (test-suite, "
+              "reconciliation, citation-grounding, safety-envelope) remain the "
+              "domain-pack library behind the same task_gate contract.",
     ),
     # L6 — Governance / compliance
     Control(
@@ -381,10 +488,40 @@ CONTROLS: list[Control] = [
     ),
     Control(
         "CTRL-L6-03", "Signed policy bundles / two-person change", "L6",
-        Status.DECLARED, "n/a", None,
-        None, None,
-        notes="Target control (Phase 1/6): policy-as-code with signatures and "
-              "approval friction.",
+        Status.VERIFIED, "enabled",
+        "platform/agent_platform.py:AgentPlatform -> PolicyEnforcementPoint "
+        "(signed policy-bundle allow-list verified pre-execution, default-on)",
+        "security/policy_bundle.py:PolicyRegistry + PolicyBundle",
+        "tests/test_policy_bundle.py + tests/test_platform.py",
+        notes="Governance build (blueprint §6 / L6): the executor's effective "
+              "intent allow-list is a signed, versioned, content-addressed policy "
+              "bundle — not merely static code. TWO enforcement surfaces. (1) "
+              "Release-time governance: a change to the policy requires a "
+              "two-person rule (separation of duties) — the actor who PROPOSES a "
+              "new version may not be the one who APPROVES it; only a distinct "
+              "approver's sign-off activates + HMAC-signs the bundle, and every "
+              "governed change is recorded in the tamper-evident ledger (version, "
+              "proposer, approvers, digest — never a secret). Genesis (v1) is the "
+              "deploy-time baseline (single-authority bootstrap, signed for "
+              "integrity, not itself a ledger event); every later version goes "
+              "through propose->approve->activate with a chained parent_digest. "
+              "(2) Execute-time boundary: the active bundle's signature is "
+              "re-verified on EVERY read and its allow-list is consulted at the "
+              "side-effect boundary before every action — a tampered/absent active "
+              "bundle or a disallowed intent fails closed (deny 'policy_bundle'), "
+              "which is what makes this boundary_enforced. Default-on "
+              "(enable_policy_bundle=True; the genesis baseline admits the agent's "
+              "vocabulary so it is non-blocking until a change tightens it). "
+              "Adversarially tested (proposer self-approval and duplicate-approval "
+              "rejected, a stale concurrent change rejected, a forged signature / "
+              "mutated bundle content / wrong key all fail closed, and a "
+              "two-person-approved tightening denies the de-listed mitigation on "
+              "the LIVE loop) — hence 'verified'. The bundle's numeric limits are "
+              "carried as signed, auditable metadata; those are enforced by their "
+              "own controls (CTRL-L3-03 budget, CTRL-L4-04 breaker), not "
+              "double-claimed. Production seam: external signer identities "
+              "(OIDC/KMS key per approver + change-ticket gate) instead of one "
+              "shared HMAC key.",
     ),
     # L7 — Ecosystem / humans
     Control(

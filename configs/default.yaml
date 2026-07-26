@@ -65,7 +65,13 @@ mitigation:
   memory_isolation: false     # read-only history after load (Sec 5.3 L2)
   planner_validation: false   # Sec 5.3 L3
   telemetry_rollback: false   # Sec 5.2
-  zero_trust_api: false       # Sec 5.3 L4
+  zero_trust_api: true        # Sec 5.3 L4 / CTRL-L4-03: the whole /api surface
+                              # (control plane + model testing) requires a signed
+                              # bearer token + role (server/auth.py). Set false to
+                              # restore the paper's unauthenticated baseline.
+  api_rate_limit_per_min: 120 # CTRL-L4-07: per-principal token-bucket limit on the
+                              # /api surface (burst == this; refill == /60 per sec).
+                              # <=0 disables it. Inert when zero_trust_api is false.
 
 # ===== logging =====
 logging:

@@ -8,6 +8,8 @@ recorded in a tamper-evident ledger.
 """
 from __future__ import annotations
 
+import dataclasses
+
 import pytest
 
 from maestro.agent.reasoning import ReasoningResult
@@ -16,6 +18,7 @@ from maestro.platform import AgentPlatform
 from maestro.security.circuit_breaker import CircuitBreaker
 from maestro.security.enforcement import ActionState
 from maestro.security.metrics import compute_metrics
+from maestro.security.policy_bundle import PolicyBundle
 from maestro.telemetry.detection import Alert, AlertClass
 
 
@@ -257,3 +260,165 @@ def test_memory_promotion_shares_the_platform_ledger():
     assert p.ledger.verify_chain() == -1
     # ...but metrics still count only actions (memory events are not actions).
     assert compute_metrics(p.ledger)["total_actions"] == 1
+
+
+# --------------------------------------------------------------------------- #
+# Executor sandbox + durable exactly-once on the live loop (BP4)
+# --------------------------------------------------------------------------- #
+def test_rogue_adapter_claiming_a_different_target_is_denied_at_the_sandbox():
+    # An adapter that reports touching a resource OUTSIDE the authorized scope is
+    # a compromised/buggy executor. The sandbox denies it at the side-effect
+    # boundary — the escape is caught, not recorded as a clean execution.
+    rogue = {"throttle_telemetry": lambda p: {"ok": True, "target": "telemetry:OTHER"}}
+    p = AgentPlatform(adapters=rogue)
+    r = p.handle_alert(_alert(AlertClass.DOS, 0.95))
+    assert not r.allowed
+    assert r.reason.startswith("sandbox:")
+    assert "outside authorized scope" in r.reason
+    # The denial is still audited — a caught escape is as visible as an execution.
+    assert p.ledger.verify_chain() == -1
+
+
+def test_oversized_adapter_output_is_denied_at_the_sandbox():
+    fat = {"throttle_telemetry": lambda p: {"ok": True, "target": p.target, "blob": "x" * 200000}}
+    p = AgentPlatform(adapters=fat)
+    r = p.handle_alert(_alert(AlertClass.DOS, 0.95))
+    assert not r.allowed and r.reason.startswith("sandbox:")
+
+
+# --------------------------------------------------------------------------- #
+# Pre-execution critique gate on the live loop (BP7)
+# --------------------------------------------------------------------------- #
+def test_unsafe_mitigation_is_vetoed_by_the_environmental_verifier():
+    # The reasoner proposes an in-vocabulary, capability-backed action that is
+    # WRONG for the observed condition: raising detection thresholds during a
+    # DoS would blind the detector mid-attack. The deterministic environmental
+    # verifier vetoes it at the boundary — before the side effect — even though
+    # capability, risk, budget and breaker would all have allowed it.
+    p = AgentPlatform(reasoner=_Rogue("raise_thresholds"))
+    r = p.handle_alert(_alert(AlertClass.DOS, 0.95))
+    assert not r.allowed
+    assert r.reason.startswith("critique")
+    assert "not an appropriate" in r.reason
+    # No side effect ran, and the veto is audited like any other outcome.
+    assert r.enforcement.output == {}
+    assert p.ledger.verify_chain() == -1
+
+
+def test_acting_on_a_benign_baseline_is_vetoed():
+    # Acting on a NORMAL baseline is a self-inflicted disruption; throttling the
+    # stream when nothing is wrong is vetoed.
+    p = AgentPlatform(reasoner=_Rogue("throttle_telemetry"))
+    r = p.handle_alert(_alert(AlertClass.NORMAL, 0.1))
+    assert not r.allowed and r.reason.startswith("critique")
+
+
+def test_a_justification_that_leaks_a_secret_is_rejected_at_the_gate():
+    # HMDC Stage-1 guardrails are dispositive on the live loop: a mitigation that
+    # is otherwise appropriate is still rejected if its justification leaks a
+    # secret (defense against a compromised reasoner exfiltrating via the audit).
+    class _Leaky:
+        def reason(self, alert, ctx=None):
+            return ReasoningResult(
+                summary="throttle; password: hunter2 to reach the box",
+                severity=1.0, action="throttle_telemetry")
+
+    p = AgentPlatform(reasoner=_Leaky())
+    r = p.handle_alert(_alert(AlertClass.DOS, 0.95))
+    assert not r.allowed and r.reason.startswith("critique")
+    assert "reject" in r.reason
+
+
+def test_disabling_the_critique_gate_restores_the_pre_bp7_boundary():
+    # The gate is default-on; enable_critique=False restores the earlier path so
+    # an out-of-policy action would execute — proving the gate is what blocks it.
+    p = AgentPlatform(reasoner=_Rogue("raise_thresholds"), enable_critique=False)
+    r = p.handle_alert(_alert(AlertClass.DOS, 0.95))
+    assert r.allowed  # no critique gate -> the environmental veto is absent
+
+
+def test_durable_journal_replays_a_side_effect_exactly_once_across_a_restart(tmp_path):
+    jpath = str(tmp_path / "platform.jsonl")
+    side: list[str] = []
+
+    def _adapter(p):  # a shared, side-effecting adapter across two "processes"
+        side.append(p.target)
+        return {"ok": True, "effect": "throttled", "target": p.target}
+
+    adapters = {"throttle_telemetry": _adapter}
+
+    # "Process 1" executes the mitigation once and journals it to disk.
+    p1 = AgentPlatform(adapters=adapters, journal_path=jpath)
+    r1 = p1.handle_alert(_alert(AlertClass.DOS, 0.95))
+    assert r1.allowed and side == ["telemetry:ws-stream"]
+
+    # "Process 2" — a fresh platform (empty in-memory idempotency cache) over the
+    # SAME on-disk journal — replays the recorded result rather than re-executing.
+    p2 = AgentPlatform(adapters=adapters, journal_path=jpath)
+    r2 = p2.handle_alert(_alert(AlertClass.DOS, 0.95))
+    assert r2.allowed
+    assert side == ["telemetry:ws-stream"]         # NOT executed a second time
+    # The replay is recorded honestly in the audit trail.
+    authorized = [e for e in p2.ledger.events if e.event_type == "tool.execution.authorized"]
+    assert authorized and authorized[-1].detail["replayed"] is True
+
+
+# --------------------------------------------------------------------------- #
+# Governed policy bundle at the side-effect boundary (CTRL-L6-03)
+# --------------------------------------------------------------------------- #
+def _tighten(p: AgentPlatform, drop: str, *, proposer="user:alice", approver="user:bob") -> None:
+    """Two-person-approve a policy change that drops ``drop`` from the allow-list."""
+    active = p.policy.active().bundle
+    v_next = PolicyBundle.create(
+        version=active.version + 1,
+        allowed_intents=[i for i in active.allowed_intents if i != drop],
+        parent_digest=active.digest(), provenance=f"incident: freeze {drop}")
+    rid = p.policy.propose(v_next, proposer=proposer)
+    p.policy.approve(rid, approver=approver)
+
+
+def test_default_platform_ships_a_signed_governed_policy_baseline():
+    p = AgentPlatform()
+    active = p.policy.active()                       # verifies (fail-closed) on read
+    assert active.bundle.version == 1
+    # The genesis allow-list is exactly this agent's intent vocabulary.
+    assert set(active.bundle.allowed_intents) == set(p.blast_radius().intent_vocabulary)
+
+
+def test_a_two_person_policy_change_tightens_the_live_boundary():
+    p = AgentPlatform()
+    # Baseline: a DOS is mitigated by throttling the telemetry stream.
+    assert p.handle_alert(_alert(AlertClass.DOS, 0.95)).allowed
+
+    # An operator + a distinct approver tighten the policy to forbid throttling.
+    _tighten(p, "throttle_telemetry")
+
+    # The same mitigation is now denied AT THE EXECUTOR by the governed policy,
+    # even though capability/risk/budget/critique would all pass.
+    r = p.handle_alert(_alert(AlertClass.DOS, 0.95, ts=2000.0))
+    assert not r.allowed
+    assert r.reason.startswith("policy_bundle")
+    assert r.decision == "deny_autonomous"
+    assert r.enforcement.output == {}                # no side effect ran
+    # The governed change is itself recorded in the tamper-evident ledger.
+    assert "policy.bundle.activated" in {e.event_type for e in p.ledger.events}
+    assert p.ledger.verify_chain() == -1
+
+
+def test_a_tampered_active_policy_fails_the_boundary_closed():
+    p = AgentPlatform()
+    # Forge the active bundle's signature: the executor must refuse to run under
+    # a policy it cannot verify, rather than falling back to a permissive default.
+    p.policy._active = dataclasses.replace(p.policy._active, signature="deadbeef")
+    r = p.handle_alert(_alert(AlertClass.DOS, 0.95))
+    assert not r.allowed
+    assert r.reason.startswith("policy_bundle")
+    assert "no valid active policy" in r.reason
+
+
+def test_disabling_the_policy_bundle_restores_the_ungoverned_boundary():
+    # Default-on; enable_policy_bundle=False removes the governed allow-list gate
+    # so the action rides only the static registry — proving the gate is live.
+    p = AgentPlatform(enable_policy_bundle=False)
+    assert p.policy is None
+    assert p.handle_alert(_alert(AlertClass.DOS, 0.95)).allowed
