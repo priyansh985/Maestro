@@ -134,17 +134,17 @@ class ComplianceExporter:
         """Collect control status for the specified framework."""
         controls = []
         for control in CONTROLS:
-            if framework == "both" or control.framework == framework:
+            if framework == "both" or control.maestro_layer == framework:
                 controls.append({
                     "control_id": control.control_id,
                     "name": control.name,
-                    "layer": control.layer,
-                    "status": control.status,
+                    "layer": control.maestro_layer,
+                    "status": control.status.value if hasattr(control.status, 'value') else str(control.status),
                     "implementation": control.implementation,
                     "enforcement_point": control.enforcement_point,
                     "test_id": control.test_id,
                     "notes": control.notes,
-                    "framework": control.framework,
+                    "framework": control.maestro_layer,
                 })
         return controls
     
@@ -154,14 +154,15 @@ class ComplianceExporter:
         
         # Control status as evidence
         for control in CONTROLS:
-            if control.status in ("verified", "boundary_enforced"):
+            status_val = control.status.value if hasattr(control.status, 'value') else str(control.status)
+            if status_val in ("verified", "boundary_enforced"):
                 evidence.append(ComplianceEvidence(
                     control_id=control.control_id,
                     evidence_type="control_status",
-                    description=f"Control {control.control_id} status: {control.status}",
+                    description=f"Control {control.control_id} status: {status_val}",
                     timestamp=time.time(),
                     source="control_status",
-                    data={"status": control.status, "notes": control.notes},
+                    data={"status": status_val, "notes": control.notes},
                 ))
         
         # Ledger integrity
