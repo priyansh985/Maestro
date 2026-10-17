@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "maestro-secure-agentic-ai"
-version = "0.1.0"
+version = "1.0.0"
 description = "Reproduction of arXiv:2508.10043 - Securing Agentic AI (MAESTRO threat modeling for LLM-based network monitoring agents)"
 readme = "README.md"
 requires-python = ">=3.10"
