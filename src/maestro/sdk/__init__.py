@@ -1,30 +1,20 @@
 """MAESTRO SDK — Typed client library for the MAESTRO Control Plane.
 
-Installation:
-    pip install maestro-sdk
-
 Quickstart:
     from maestro.sdk import MaestroClient, AlertIn, AgentType
 
-    client = MaestroClient(
-        base_url="https://api.maestro.example.com",
-        api_key="your-api-key"
-    )
+    client = MaestroClient(base_url="http://127.0.0.1:8000", api_key="your-token")
 
-    # Create a coding agent
-    agent = client.agents.create(type=AgentType.CODING, tenant="my-tenant")
+    # Create a coding agent in your tenant's fleet
+    agent = client.agents.create(agent_type=AgentType.CODING)
     print(f"Created agent: {agent.agent_id}")
 
-    # Submit an alert
-    alert = AlertIn(cls="dos", severity=0.9, detail="High traffic from 10.0.0.1")
-    result = client.alerts.submit(alert)
-    print(f"Alert processed: {result.alert_id}")
+    # Run an alert through it (reason -> propose -> authorize -> ledger)
+    result = client.agents.submit_alert(agent.agent_id, AlertIn(cls="dos", severity=0.9))
+    print(f"Decision: {result.decision}")
 
-    # Inspect memory
-    records = client.memory.inspect(tenant="my-tenant", tier="episodic")
-    print(f"Found {len(records.records)} memory records")
-
-    # Check ledger integrity
+    # Inspect memory, verify the tamper-evident ledger
+    records = client.memory.inspect(tier="episodic")
     verification = client.ledger.verify()
     print(f"Ledger intact: {verification.intact}")
 
@@ -32,11 +22,12 @@ Quickstart:
 
 Async usage:
     async with MaestroClient(base_url="...", api_key="...") as client:
-        agent = await client.agents.acreate(type=AgentType.RESEARCH, tenant="my-tenant")
-        records = await client.memory.ainspect(tenant="my-tenant")
+        agent = await client.agents.acreate(type=AgentType.RESEARCH)
+        records = await client.memory.ainspect()
         verification = await client.ledger.averify()
 
-Documentation: https://maestro.example.com/docs/sdk
+From the environment:
+    client = MaestroClient.from_env()   # MAESTRO_BASE_URL, MAESTRO_API_TOKEN
 """
 from __future__ import annotations
 
@@ -45,7 +36,7 @@ from __future__ import annotations
 from maestro.sdk.client import (
     AgentClient,
     AlertClient,
-    ControlPlaneClient,
+    ControlPlaneStateClient,
     CritiqueClient,
     LedgerClient,
     MaestroClient,
@@ -81,7 +72,6 @@ from maestro.sdk.models import (
     AlertClass,
     AlertIn,
     AlertOut,
-    AlertSeverity,
     BlastRadiusResponse,
     ControlPlaneState,
     CritiqueIn,
@@ -109,12 +99,12 @@ from maestro.sdk.models import (
     VariableOut,
 )
 
-__version__ = "0.9.0"
+__version__ = "1.0.0"
 
 __all__ = [
     # Main client
     "MaestroClient",
-    
+
     # Sub-clients
     "AgentClient",
     "PolicyClient",
@@ -123,38 +113,37 @@ __all__ = [
     "TenantClient",
     "PerimeterClient",
     "CritiqueClient",
-    "ControlPlaneClient",
+    "ControlPlaneStateClient",
     "AlertClient",
-    
+
     # Models - Alerts
     "AlertClass",
-    "AlertSeverity",
     "AlertIn",
     "AlertOut",
-    
+
     # Models - Agents
     "AgentType",
     "AgentStatus",
     "AgentCreateRequest",
     "AgentInfo",
     "AgentListResponse",
-    
+
     # Models - Blast Radius
     "BlastRadiusResponse",
-    
+
     # Models - Control Plane
     "ControlPlaneState",
-    
+
     # Models - Critique
     "CritiqueIn",
     "CritiqueOut",
     "HaltResponse",
-    
+
     # Models - Ledger
     "LedgerEvent",
     "LedgerVerifyResponse",
     "LedgerExportResponse",
-    
+
     # Models - Memory
     "MemoryTier",
     "TrustLabel",
@@ -163,27 +152,27 @@ __all__ = [
     "MemoryInspectResponse",
     "MemoryPromoteRequest",
     "MemoryQuarantineRequest",
-    
+
     # Models - Metrics
     "MetricsResponse",
-    
+
     # Models - Perimeter
     "PerimeterIn",
     "PerimeterResult",
     "VariableOut",
     "SignalOut",
-    
+
     # Models - Tenants
     "TenantCreateRequest",
     "TenantInfo",
-    
+
     # Models - Policies
     "PolicyValidateRequest",
     "PolicyValidateResponse",
-    
+
     # Models - Errors
     "ErrorResponse",
-    
+
     # Exceptions
     "MaestroError",
     "NotFound",
@@ -194,7 +183,7 @@ __all__ = [
     "ServerError",
     "ConfigurationError",
     "TimeoutError",
-    
+
     # HTTP client
     "HttpControlPlaneClient",
 ]

@@ -1,13 +1,28 @@
-"""Pydantic models for MAESTRO SDK request/response types."""
+"""Pydantic models for MAESTRO SDK request/response types.
+
+These mirror the actual control-plane payloads (``maestro/server/control_api.py``
+and ``maestro/server/agents_api.py``). Timestamps are epoch seconds (floats);
+ledger and memory shapes come straight from the framework dataclasses'
+``as_dict()``/``asdict()``. Unknown response fields are ignored so the SDK
+tolerates additive server changes.
+"""
 from __future__ import annotations
 
-from datetime import datetime
 from enum import Enum
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
+class _Model(BaseModel):
+    """Base: ignore extra server fields (forward compatibility)."""
+
+    model_config = ConfigDict(extra="ignore")
+
+
+# --------------------------------------------------------------------------- #
+# Alerts
+# --------------------------------------------------------------------------- #
 class AlertClass(str, Enum):
     DOS = "dos"
     ANOMALY = "anomaly"
@@ -16,34 +31,33 @@ class AlertClass(str, Enum):
     NORMAL = "normal"
 
 
-class AlertSeverity(str, Enum):
-    LOW = "low"
-    MEDIUM = "medium"
-    HIGH = "high"
-    CRITICAL = "critical"
+class AlertIn(_Model):
+    """Submit an alert through the live control loop."""
+
+    cls: AlertClass | str = Field("dos", description="normal|dos|port_scan|bruteforce|anomaly")
+    severity: float = Field(0.9, ge=0.0, le=1.0)
+    detail: str = ""
 
 
-class AlertIn(BaseModel):
-    cls: AlertClass
-    severity: float
-    detail: str
-    src_ip: str | None = None
-    dst_ip: str | None = None
-    metadata: dict[str, Any] = Field(default_factory=dict)
+class AlertOut(_Model):
+    """The outcome of one alert: the decision card and its verdict."""
 
-
-class AlertOut(BaseModel):
     alert_id: str
-    cls: AlertClass
-    severity: float
-    detail: str
-    src_ip: str | None = None
-    dst_ip: str | None = None
-    metadata: dict[str, Any] = Field(default_factory=dict)
-    created_at: datetime
     tenant: str
+    created_at: float
+    alert_class: str
+    proposed_action: str
+    allowed: bool
+    decision: str
+    reason: str
+    shadowed: bool = False
+    decision_card: dict[str, Any] = Field(default_factory=dict)
+    agent_id: str | None = None  # set when driven through a fleet agent
 
 
+# --------------------------------------------------------------------------- #
+# Agents (fleet lifecycle)
+# --------------------------------------------------------------------------- #
 class AgentType(str, Enum):
     GENERIC = "generic"
     CODING = "coding"
@@ -58,32 +72,47 @@ class AgentStatus(str, Enum):
     ERROR = "error"
 
 
-class AgentCreateRequest(BaseModel):
-    type: AgentType = AgentType.GENERIC
-    tenant: str = "default"
+class AgentCreateRequest(_Model):
+    """Provision a new agent in the caller's tenant.
+
+    The tenant is derived from the authenticated principal's token (structural
+    isolation), never from the request body.
+    """
+
+    type: AgentType | str = AgentType.GENERIC
     agent_id: str | None = None
-    allowed_intents: list[str] | None = None
+    allowed_intents: list[str] | None = Field(
+        None, description="can only narrow the type's vocabulary (least privilege)")
     shadow: bool = False
 
 
-class AgentInfo(BaseModel):
+class AgentInfo(_Model):
     agent_id: str
     tenant: str
-    type: AgentType
-    status: AgentStatus
+    type: AgentType | str
+    status: AgentStatus | str
     shadow_mode: bool
-    capabilities: list[str]
+    capabilities: list[str] = Field(default_factory=list)
+    intent_vocabulary: list[str] = Field(default_factory=list)
     ledger_events: int
-    memory_tiers: dict[str, int]
-    created_at: datetime
+    ledger_intact: bool = True
+    memory_tiers: dict[str, int] = Field(default_factory=dict)
+    created_at: float
+    last_active: float | None = None
+    error: str | None = None
+    blast_radius: dict[str, Any] | None = None   # detail endpoint only
+    policy_digest: str | None = None             # detail endpoint only
 
 
-class AgentListResponse(BaseModel):
+class AgentListResponse(_Model):
     agents: list[AgentInfo]
     total: int
 
 
-class BlastRadiusResponse(BaseModel):
+# --------------------------------------------------------------------------- #
+# Blast radius
+# --------------------------------------------------------------------------- #
+class BlastRadiusResponse(_Model):
     agent_id: str
     tenant: str
     capabilities: list[str]
@@ -91,54 +120,74 @@ class BlastRadiusResponse(BaseModel):
     reversible_intents: list[str]
     irreversible_intents: list[str]
     budget: dict[str, Any]
-    holds_irreversible_capability: bool
+    holds_irreversible_capability: bool | None = None
+    summary: str | None = None
 
 
-class PerimeterIn(BaseModel):
+# --------------------------------------------------------------------------- #
+# Perimeter (dual-LLM injection boundary)
+# --------------------------------------------------------------------------- #
+class PerimeterIn(_Model):
     content: str
     source: str = "external"
 
 
-class VariableOut(BaseModel):
-    name: str
-    kind: str
-    value: str
-
-
-class SignalOut(BaseModel):
+class SignalOut(_Model):
     category: str
     pattern: str
     severity: float
     excerpt: str
 
 
-class PerimeterResult(BaseModel):
+class VariableOut(_Model):
+    name: str
+    kind: str
+    value: str
+
+
+class PerimeterResult(_Model):
     disposition: str
     trust: str
     injection_score: float
     influential: bool
     admitted: bool
-    signals: list[SignalOut]
-    variables: list[VariableOut]
+    signals: list[SignalOut] = Field(default_factory=list)
+    variables: list[VariableOut] = Field(default_factory=list)
     source: str
     reason: str
 
 
-class CritiqueIn(BaseModel):
+# --------------------------------------------------------------------------- #
+# Critique (HMDC pre-execution gate)
+# --------------------------------------------------------------------------- #
+class CritiqueIn(_Model):
     text: str
-    grounding: list[str]
+    grounding: list[str] = Field(default_factory=list)
+    intent: str | None = None
+    family: str | None = None
 
 
-class CritiqueOut(BaseModel):
+class CritiqueOut(_Model):
     verdict: str
-    judge_scores: dict[str, float]
+    reason: str
+    guardrails: dict[str, Any] = Field(default_factory=dict)
+    semantic_alignment: float = 0.0
+    judge_scores: list[dict[str, Any]] = Field(default_factory=list)
+    ensemble_mean: float = 0.0
+    ensemble_variance: float = 0.0
+    excluded_same_family: list[str] = Field(default_factory=list)
+    task_verified: bool | None = None
 
 
-class HaltResponse(BaseModel):
+class HaltResponse(_Model):
     halted: bool
-    message: str
+    message: str = ""
+    agent_id: str | None = None
 
 
+# --------------------------------------------------------------------------- #
+# Memory
+# --------------------------------------------------------------------------- #
 class MemoryTier(str, Enum):
     WORKING = "working"
     EPISODIC = "episodic"
@@ -153,90 +202,116 @@ class TrustLabel(str, Enum):
     SYSTEM = "system"
 
 
-class MemoryRecord(BaseModel):
+class MemoryRecord(_Model):
     record_id: str
     scope: str
-    tier: MemoryTier
-    trust: TrustLabel
+    tier: MemoryTier | str
+    trust: TrustLabel | str
     content: str
-    provenance: dict[str, Any]
-    attributes: dict[str, Any]
-    created_at: float
+    provenance: dict[str, Any] = Field(default_factory=dict)
+    attributes: dict[str, Any] = Field(default_factory=dict)
+    created_at: float = 0.0
     expires_at: float | None = None
-    content_hash: str
-    influential: bool
+    content_hash: str = ""
 
 
-class MemoryInspectRequest(BaseModel):
-    tier: MemoryTier | None = None
-    include_untrusted: bool = False
+class MemoryInspectRequest(_Model):
+    tier: MemoryTier | str | None = None
+    include_untrusted: bool = True
     limit: int = 100
 
 
-class MemoryInspectResponse(BaseModel):
+class MemoryInspectResponse(_Model):
+    scope: str
     records: list[MemoryRecord]
-    total: int
+    count: int
+    total: int | None = None
 
 
-class MemoryPromoteRequest(BaseModel):
+class MemoryPromoteRequest(_Model):
     record_id: str
-    capability: str
+    capability: str = Field(
+        "cap:memory:promote",
+        description="the asserted capability; the scoped token is minted "
+        "server-side under the OPERATOR role and ledgered")
 
 
-class MemoryQuarantineRequest(BaseModel):
+class MemoryQuarantineRequest(_Model):
     record_id: str
 
 
-class LedgerEvent(BaseModel):
+# --------------------------------------------------------------------------- #
+# Ledger
+# --------------------------------------------------------------------------- #
+class LedgerEvent(_Model):
+    """One tamper-evident audit event (hash-chained + HMAC-signed)."""
+
+    event_id: str
+    timestamp_utc: float
     event_type: str
     actor_identity: str
     decision: str
     input_hash: str
     policy_digest: str
-    detail: dict[str, Any]
-    timestamp: float
-    prev_hash: str
-    seq: int
+    risk_before: float | None = None
+    risk_after: float | None = None
+    prev_event_hash: str
+    event_hash: str
+    hmac: str
+    detail: dict[str, Any] = Field(default_factory=dict)
 
 
-class LedgerVerifyResponse(BaseModel):
+class LedgerVerifyResponse(_Model):
     intact: bool
     events: int
     head_hash: str
     first_broken_index: int | None = None
 
 
-class LedgerExportResponse(BaseModel):
+class LedgerExportResponse(_Model):
     events: list[LedgerEvent]
     count: int
 
 
-class TenantCreateRequest(BaseModel):
+# --------------------------------------------------------------------------- #
+# Tenants
+# --------------------------------------------------------------------------- #
+class TenantCreateRequest(_Model):
     tenant_id: str
     display_name: str | None = None
     quotas: dict[str, Any] | None = None
 
 
-class TenantInfo(BaseModel):
+class TenantInfo(_Model):
     tenant_id: str
     display_name: str | None = None
-    created_at: datetime
-    quotas: dict[str, Any]
-    agents: int
-    ledger_events: int
+    created_at: float | None = None
+    quotas: dict[str, Any] = Field(default_factory=dict)
+    agents: int = 0
+    ledger_events: int = 0
+    isolated: bool = False
+    isolated_at: float | None = None
 
 
-class PolicyValidateRequest(BaseModel):
+# --------------------------------------------------------------------------- #
+# Policies
+# --------------------------------------------------------------------------- #
+class PolicyValidateRequest(_Model):
     policy_yaml: str
 
 
-class PolicyValidateResponse(BaseModel):
+class PolicyValidateResponse(_Model):
     valid: bool
     errors: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
+    digest: str | None = None
+    bundle: dict[str, Any] | None = None
 
 
-class ControlPlaneState(BaseModel):
+# --------------------------------------------------------------------------- #
+# Control plane state & metrics
+# --------------------------------------------------------------------------- #
+class ControlPlaneState(_Model):
     tenant: str
     shadow: bool
     halted: bool
@@ -245,16 +320,21 @@ class ControlPlaneState(BaseModel):
     ledger_intact: bool
 
 
-class MetricsResponse(BaseModel):
-    total_actions: int
-    allowed_actions: int
-    denied_actions: int
-    ledger_intact: bool
-    avg_residual_risk: float
-    avg_latency_ms: float
+class MetricsResponse(_Model):
+    """Ledger-derived operational metrics (not self-reported counters)."""
+
+    total_actions: int = 0
+    authorized: int = 0
+    denied: int = 0
+    authorization_rate: float = 0.0
+    denials_by_stage: dict[str, int] = Field(default_factory=dict)
+    unsafe_action_rate: float = 0.0
+    tool_failure_rate: float = 0.0
+    policy_block_count: int = 0
+    ledger_intact: bool = True
 
 
-class ErrorResponse(BaseModel):
+class ErrorResponse(_Model):
     error: str
     message: str
     request_id: str | None = None

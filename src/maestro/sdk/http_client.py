@@ -153,10 +153,14 @@ class ControlPlaneClient:
         request_id = response.headers.get("x-request-id")
         status_code = response.status_code
         
-        if status_code == 400:
+        if status_code in (400, 422):
+            # FastAPI/Pydantic returns 422 for validation; treat like 400
+            detail = error_data.get("message") or error_data.get("detail") or "Validation failed"
+            if isinstance(detail, list):
+                detail = "; ".join(str(d.get("msg", d)) if isinstance(d, dict) else str(d) for d in detail)
             raise ValidationError(
-                error_data.get("message", "Validation failed"),
-                errors=error_data.get("details"),
+                detail,
+                errors=error_data.get("details") or error_data.get("detail"),
                 request_id=request_id,
                 status_code=status_code,
             )
@@ -293,15 +297,13 @@ class ControlPlaneClient:
         )
         return AgentInfo(**data)
     
-    def list_agents(self, tenant: str | None = None) -> AgentListResponse:
-        """List all agents."""
-        params = {"tenant": tenant} if tenant else None
-        data = self._request_with_retry("GET", "/api/agents", params=params)
+    def list_agents(self) -> AgentListResponse:
+        """List the caller's tenant fleet (tenant derives from the token)."""
+        data = self._request_with_retry("GET", "/api/agents")
         return AgentListResponse(**data)
-    
-    async def alist_agents(self, tenant: str | None = None) -> AgentListResponse:
-        params = {"tenant": tenant} if tenant else None
-        data = await self._arequest_with_retry("GET", "/api/agents", params=params)
+
+    async def alist_agents(self) -> AgentListResponse:
+        data = await self._arequest_with_retry("GET", "/api/agents")
         return AgentListResponse(**data)
     
     def get_agent(self, agent_id: str) -> AgentInfo:
@@ -321,19 +323,61 @@ class ControlPlaneClient:
         return await self._arequest_with_retry("DELETE", f"/api/agents/{agent_id}")
     
     def get_agent_logs(self, agent_id: str, limit: int = 100) -> list[dict]:
-        """Get agent logs."""
+        """Get agent logs (its hash-chained ledger events, newest first)."""
         data = self._request_with_retry(
             "GET", f"/api/agents/{agent_id}/logs",
             params={"limit": limit},
         )
         return data.get("logs", [])
-    
+
     async def aget_agent_logs(self, agent_id: str, limit: int = 100) -> list[dict]:
         data = await self._arequest_with_retry(
             "GET", f"/api/agents/{agent_id}/logs",
             params={"limit": limit},
         )
         return data.get("logs", [])
+
+    def get_agent_blast_radius(self, agent_id: str) -> BlastRadiusResponse:
+        """Get one fleet agent's blast radius."""
+        data = self._request_with_retry("GET", f"/api/agents/{agent_id}/blast-radius")
+        return BlastRadiusResponse(**data)
+
+    async def aget_agent_blast_radius(self, agent_id: str) -> BlastRadiusResponse:
+        data = await self._arequest_with_retry("GET", f"/api/agents/{agent_id}/blast-radius")
+        return BlastRadiusResponse(**data)
+
+    def submit_agent_alert(self, agent_id: str, alert: AlertIn) -> AlertOut:
+        """Run one alert through a fleet agent's live loop."""
+        data = self._request_with_retry(
+            "POST", f"/api/agents/{agent_id}/alert",
+            json=alert.model_dump(),
+        )
+        return AlertOut(**data)
+
+    async def asubmit_agent_alert(self, agent_id: str, alert: AlertIn) -> AlertOut:
+        data = await self._arequest_with_retry(
+            "POST", f"/api/agents/{agent_id}/alert",
+            json=alert.model_dump(),
+        )
+        return AlertOut(**data)
+
+    def halt_agent(self, agent_id: str) -> HaltResponse:
+        """Trip one fleet agent's kill switch."""
+        data = self._request_with_retry("POST", f"/api/agents/{agent_id}/halt")
+        return HaltResponse(**data)
+
+    async def ahalt_agent(self, agent_id: str) -> HaltResponse:
+        data = await self._arequest_with_retry("POST", f"/api/agents/{agent_id}/halt")
+        return HaltResponse(**data)
+
+    def resume_agent(self, agent_id: str) -> HaltResponse:
+        """Clear one fleet agent's kill switch."""
+        data = self._request_with_retry("POST", f"/api/agents/{agent_id}/resume")
+        return HaltResponse(**data)
+
+    async def aresume_agent(self, agent_id: str) -> HaltResponse:
+        data = await self._arequest_with_retry("POST", f"/api/agents/{agent_id}/resume")
+        return HaltResponse(**data)
     
     # --- Blast Radius ---
     
@@ -405,14 +449,14 @@ class ControlPlaneClient:
         """Run pre-execution critique gate."""
         data = self._request_with_retry(
             "POST", "/api/critique",
-            json=request.model_dump(),
+            json=request.model_dump(exclude_none=True),
         )
         return CritiqueOut(**data)
-    
+
     async def acritique(self, request: CritiqueIn) -> CritiqueOut:
         data = await self._arequest_with_retry(
             "POST", "/api/critique",
-            json=request.model_dump(),
+            json=request.model_dump(exclude_none=True),
         )
         return CritiqueOut(**data)
     
@@ -434,46 +478,46 @@ class ControlPlaneClient:
         return AlertOut(**data)
     
     # --- Memory ---
-    
-    def inspect_memory(self, request: MemoryInspectRequest, tenant: str) -> MemoryInspectResponse:
-        """Inspect memory records."""
+
+    def inspect_memory(self, request: MemoryInspectRequest, tenant: str | None = None) -> MemoryInspectResponse:
+        """Inspect memory records (the caller's tenant scope; structural)."""
         data = self._request_with_retry(
             "GET", "/api/memory",
-            params=request.model_dump(exclude_none=True) | {"tenant": tenant},
+            params=request.model_dump(exclude_none=True),
         )
         return MemoryInspectResponse(**data)
-    
-    async def ainspect_memory(self, request: MemoryInspectRequest, tenant: str) -> MemoryInspectResponse:
+
+    async def ainspect_memory(self, request: MemoryInspectRequest, tenant: str | None = None) -> MemoryInspectResponse:
         data = await self._arequest_with_retry(
             "GET", "/api/memory",
-            params=request.model_dump(exclude_none=True) | {"tenant": tenant},
+            params=request.model_dump(exclude_none=True),
         )
         return MemoryInspectResponse(**data)
-    
-    def promote_memory(self, request: MemoryPromoteRequest, tenant: str) -> dict[str, Any]:
-        """Promote a memory record."""
+
+    def promote_memory(self, request: MemoryPromoteRequest, tenant: str | None = None) -> dict[str, Any]:
+        """Promote a quarantined memory record to trusted."""
         return self._request_with_retry(
             "POST", "/api/memory/promote",
-            json=request.model_dump() | {"tenant": tenant},
+            json=request.model_dump(),
         )
-    
-    async def apromote_memory(self, request: MemoryPromoteRequest, tenant: str) -> dict[str, Any]:
+
+    async def apromote_memory(self, request: MemoryPromoteRequest, tenant: str | None = None) -> dict[str, Any]:
         return await self._arequest_with_retry(
             "POST", "/api/memory/promote",
-            json=request.model_dump() | {"tenant": tenant},
+            json=request.model_dump(),
         )
-    
-    def quarantine_memory(self, request: MemoryQuarantineRequest, tenant: str) -> dict[str, Any]:
-        """Quarantine a memory record."""
+
+    def quarantine_memory(self, request: MemoryQuarantineRequest, tenant: str | None = None) -> dict[str, Any]:
+        """Quarantine a trusted memory record (demote to untrusted)."""
         return self._request_with_retry(
             "POST", "/api/memory/quarantine",
-            json=request.model_dump() | {"tenant": tenant},
+            json=request.model_dump(),
         )
-    
-    async def aquarantine_memory(self, request: MemoryQuarantineRequest, tenant: str) -> dict[str, Any]:
+
+    async def aquarantine_memory(self, request: MemoryQuarantineRequest, tenant: str | None = None) -> dict[str, Any]:
         return await self._arequest_with_retry(
             "POST", "/api/memory/quarantine",
-            json=request.model_dump() | {"tenant": tenant},
+            json=request.model_dump(),
         )
     
     # --- Ledger ---
