@@ -10,8 +10,8 @@ import json
 
 import pytest
 
-from maestro.scripts import bp0_audit
 from maestro.platform.agent_platform import _INTENT_RESOURCE, default_tool_adapters
+from maestro.scripts import bp0_audit
 from maestro.security.control_status import to_report
 
 
@@ -67,7 +67,7 @@ def test_the_one_consequential_boundary_matches_the_executor_vocabulary() -> Non
 
 
 def test_disposition_is_complete_and_uses_the_agreed_vocabulary() -> None:
-    for pkg, meta in bp0_audit.MODULE_DISPOSITION.items():
+    for _pkg, meta in bp0_audit.MODULE_DISPOSITION.items():
         assert meta["disposition"] in {"KEEP", "HARDEN", "GAP"}
         assert meta["bp"] and meta["note"]
 

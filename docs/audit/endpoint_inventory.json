@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "endpoint_count": 33,
+  "endpoint_count": 34,
   "mutating_count": 18,
   "endpoints": [
     {
@@ -34,6 +34,13 @@
     {
       "method": "GET",
       "route": "/risk",
+      "mutating": false,
+      "source": "src/maestro/server/app.py",
+      "auth": "public (health / reference / static shell / websocket)"
+    },
+    {
+      "method": "WEBSOCKET",
+      "route": "/ws",
       "mutating": false,
       "source": "src/maestro/server/app.py",
       "auth": "public (health / reference / static shell / websocket)"

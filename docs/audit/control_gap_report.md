@@ -151,9 +151,12 @@ is the reason the BP0 decision was **build-in-place, not greenfield** — see
    (`verified`, `boundary_enforced`; `tests/test_policy_bundle.py` +
    `tests/test_platform.py`). Seam: external signer identities (OIDC/KMS key per
    approver) instead of one shared HMAC key.
-7. **Next in-discipline target — CTRL-L1-01 (LLM output validators) or BP5 (a
-   SOC/network-monitoring vertical).** The enforcement *and* governance spine
-   (TB0→TB6) is now closed end-to-end on the live loop; the last `declared`-only
+7. ~~**Next in-discipline target — BP5 (a SOC/network-monitoring vertical).**~~
+   **Done.** A concrete SOC/Network Monitoring vertical now exercises the full
+   enforcement and governance spine (TB0→TB6). The live `AgentPlatform` loop natively
+   builds an Evidence Graph for the reasoner by querying trusted memory, and
+   memory promotion (`promote_memory`) is securely wired through the PEP boundary
+   (CTRL-L2-03, CTRL-L5-02).
+8. **Next in-discipline target — CTRL-L1-01 (LLM output validators).** The last `declared`-only
    control is CTRL-L1-01 (a runtime *output* policy validator on the model→
-   proposal path — the input perimeter CTRL-L1-04 already exists), and the
-   highest-leverage build after that is a concrete vertical exercising the spine.
+   proposal path).

@@ -408,7 +408,7 @@ def generate() -> list[Path]:
                 "schema_version": "1.0",
                 "package_root": _PKG_ROOT.relative_to(_REPO_ROOT).as_posix(),
                 "module_count": len(modules),
-                "total_lines": sum(int(m["lines"]) for m in modules),
+                "total_lines": sum(int(str(m["lines"])) for m in modules),
                 "modules": modules,
             },
         ),
