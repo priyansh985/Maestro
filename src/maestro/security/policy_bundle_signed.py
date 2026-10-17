@@ -12,9 +12,9 @@ import subprocess
 import time
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
-from maestro.security.policy_bundle import PolicyBundle, PolicyRegistry, ActivationRecord
+from maestro.security.policy_bundle import PolicyBundle, PolicyRegistry
 
 
 @dataclass
@@ -59,7 +59,7 @@ class SignedPolicyBundle:
         )
         self.signatures.append(sig)
     
-    def verify_signatures(self, required_signers: Optional[list[str]] = None) -> bool:
+    def verify_signatures(self, required_signers: list[str] | None = None) -> bool:
         """Verify all signatures on the bundle."""
         if len(self.signatures) < self.requires_signatures:
             return False
@@ -101,7 +101,7 @@ class SignedPolicyBundle:
         }
     
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "SignedPolicyBundle":
+    def from_dict(cls, data: dict[str, Any]) -> SignedPolicyBundle:
         """Deserialize from dictionary."""
         bundle = PolicyBundle(
             version=data["bundle"]["version"],
@@ -185,10 +185,7 @@ class CosignSigner:
                 str(bundle_file),
             ]
             
-            if self.password:
-                env = {"COSIGN_PASSWORD": self.password}
-            else:
-                env = None
+            env = {"COSIGN_PASSWORD": self.password} if self.password else None
             
             if self.fulcio_url:
                 cmd.extend(["--fulcio-url", self.fulcio_url])
@@ -393,9 +390,7 @@ class PolicyException:
     
     def is_valid(self, now: float | None = None) -> bool:
         at = now or time.time()
-        if self.expires_at > 0 and at > self.expires_at:
-            return False
-        return True
+        return not (self.expires_at > 0 and at > self.expires_at)
 
 
 class ExceptionTracker:

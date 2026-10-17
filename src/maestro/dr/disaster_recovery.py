@@ -5,7 +5,9 @@ backup verification, and failover/runbook automation.
 """
 from __future__ import annotations
 
+import base64
 import gzip
+import hashlib
 import json
 import subprocess
 import time
@@ -206,10 +208,10 @@ class BackupManager:
             
             # Verify ledger hash chain
             if "ledger" in backup_data:
-                # Reconstruct ledger and verify
-                test_ledger = Ledger(key=self.signing_key)
-                for event_data in backup_data["ledger"]:
-                    # This would reconstruct events - simplified
+                # Reconstruct ledger and verify (simplified: bind the key only;
+                # full event replay needs the Event class)
+                Ledger(key=self.signing_key)
+                for _event in backup_data["ledger"]:
                     pass
             
             return True
@@ -244,7 +246,7 @@ class BackupManager:
         
         # Reconstruct ledger
         restored_ledger = Ledger(key=self.signing_key)
-        for event_data in backup_data.get("ledger", []):
+        for _event in backup_data.get("ledger", []):
             # Reconstruct event - would need proper Event class
             pass
         
@@ -565,9 +567,6 @@ def run_recovery(dry_run: bool = False) -> dict[str, Any]:
 
 
 # --- CLI Entry Points ---
-
-import base64
-import hashlib
 
 
 def dr_backup_cli():

@@ -23,10 +23,10 @@ from pydantic import BaseModel, Field
 from ..telemetry.detection import Alert, AlertClass
 from .agent_registry import (
     AGENT_TYPES,
-    CapacityError,
-    ConflictError,
     REGISTRY,
     AgentRecord,
+    CapacityError,
+    ConflictError,
 )
 from .auth import Principal, enforce_rate_limit, require_operator, require_viewer
 

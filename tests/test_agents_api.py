@@ -27,11 +27,17 @@ def client() -> TestClient:
     app = create_app()
     configure_auth(enforce=True, service=_SVC, control_plane_tenant="default")
     token = _SVC.issue("svc:admin", tenant="default", role=Role.ADMIN, ttl_seconds=3600)
-    REGISTRY.clear(); _PLANES.clear(); _TENANT_META.clear(); _ISOLATED.clear()
+    REGISTRY.clear()
+    _PLANES.clear()
+    _TENANT_META.clear()
+    _ISOLATED.clear()
     c = TestClient(app, headers={"Authorization": f"Bearer {token}"})
     c.post("/api/reset", json={"shadow": False})
     yield c
-    REGISTRY.clear(); _PLANES.clear(); _TENANT_META.clear(); _ISOLATED.clear()
+    REGISTRY.clear()
+    _PLANES.clear()
+    _TENANT_META.clear()
+    _ISOLATED.clear()
 
 
 def _token(role: Role, tenant: str = "default") -> str:

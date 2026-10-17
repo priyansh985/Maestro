@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import subprocess
 import sys
-from pathlib import Path
 
 
 def run_cmd(cmd: list[str], description: str) -> bool:

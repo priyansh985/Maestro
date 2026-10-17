@@ -245,8 +245,10 @@ class PostgresRLSManager:
                     max_size=self.config.pool_size,
                     max_idle=300,
                 )
-            except ImportError:
-                raise RuntimeError("psycopg_pool not installed. Install with: pip install psycopg[pool]")
+            except ImportError as exc:
+                raise RuntimeError(
+                    "psycopg_pool not installed. Install with: pip install psycopg[pool]"
+                ) from exc
         return self._pool
     
     def close(self):
@@ -273,15 +275,14 @@ class PostgresRLSManager:
             if dry_run:
                 executed.append(f"[DRY RUN] {stmt[:100]}...")
                 continue
-            
-            with pool.connection() as conn:
-                with conn.cursor() as cur:
-                    cur.execute(stmt)
-                    conn.commit()
-                    executed.append(stmt[:100] + "...")
-        
+
+            with pool.connection() as conn, conn.cursor() as cur:
+                cur.execute(stmt)
+                conn.commit()
+                executed.append(stmt[:100] + "...")
+
         return executed
-    
+
     def rollback(self, dry_run: bool = False) -> list[str]:
         """Rollback RLS migration."""
         pool = self.get_pool()
@@ -297,41 +298,37 @@ class PostgresRLSManager:
             if dry_run:
                 executed.append(f"[DRY RUN] {stmt[:100]}...")
                 continue
-            
-            with pool.connection() as conn:
-                with conn.cursor() as cur:
-                    cur.execute(stmt)
-                    conn.commit()
-                    executed.append(stmt[:100] + "...")
-        
+
+            with pool.connection() as conn, conn.cursor() as cur:
+                cur.execute(stmt)
+                conn.commit()
+                executed.append(stmt[:100] + "...")
+
         return executed
     
     def set_tenant_context(self, tenant_id: str, agent_id: str, cross_tenant_read: bool = False):
         """Set tenant context for current session."""
         pool = self.get_pool()
-        with pool.connection() as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    "SELECT set_tenant_context(%s, %s, %s)",
-                    (tenant_id, agent_id, cross_tenant_read)
-                )
-                conn.commit()
-    
+        with pool.connection() as conn, conn.cursor() as cur:
+            cur.execute(
+                "SELECT set_tenant_context(%s, %s, %s)",
+                (tenant_id, agent_id, cross_tenant_read)
+            )
+            conn.commit()
+
     def clear_tenant_context(self):
         """Clear tenant context."""
         pool = self.get_pool()
-        with pool.connection() as conn:
-            with conn.cursor() as cur:
-                cur.execute("SELECT clear_tenant_context()")
-                conn.commit()
-    
+        with pool.connection() as conn, conn.cursor() as cur:
+            cur.execute("SELECT clear_tenant_context()")
+            conn.commit()
+
     def check_cross_tenant_read(self, target_tenant: str) -> bool:
         """Check if cross-tenant read is allowed."""
         pool = self.get_pool()
-        with pool.connection() as conn:
-            with conn.cursor() as cur:
-                cur.execute("SELECT check_cross_tenant_read(%s)", (target_tenant,))
-                return cur.fetchone()[0]
+        with pool.connection() as conn, conn.cursor() as cur:
+            cur.execute("SELECT check_cross_tenant_read(%s)", (target_tenant,))
+            return cur.fetchone()[0]
     
     # --- Prepared Statement Helpers ---
     

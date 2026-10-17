@@ -16,6 +16,7 @@ Run with:
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import time
 from typing import Any
@@ -113,14 +114,12 @@ def create_app(cfg: Any = None) -> FastAPI:
     @app.websocket("/ws")
     async def ws_endpoint(ws: WebSocket) -> None:
         await mgr.connect(ws)
-        try:
+        with contextlib.suppress(Exception):
             await ws.send_text(json.dumps({
                 "kind": "state",
                 "tenant": DEFAULT_CONTROL_PLANE_TENANT,
                 "ts": time.time(),
             }))
-        except Exception:
-            pass
         try:
             while True:
                 await asyncio.sleep(5)

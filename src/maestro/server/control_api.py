@@ -599,7 +599,7 @@ def validate_policy(
 
     limits = doc.get("limits") or {}
     if not isinstance(limits, dict) or not all(
-        isinstance(v, (int, float)) and not isinstance(v, bool) for v in limits.values()
+        isinstance(v, int | float) and not isinstance(v, bool) for v in limits.values()
     ):
         errors.append("limits must be a mapping of name -> number")
         limits = {}

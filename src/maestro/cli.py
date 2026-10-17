@@ -115,24 +115,52 @@ def _print_output(data: Any, fmt: str) -> None:
 
 
 def _print_table(data: Any) -> None:
-    """Simple table output for lists of dicts."""
-    if isinstance(data, list) and data and isinstance(data[0], dict):
-        keys = list(data[0].keys())
-        # Header
-        print(" | ".join(keys))
-        print("-" * (sum(len(k) for k in keys) + 3 * len(keys)))
-        for row in data:
-            print(" | ".join(str(row.get(k, "")) for k in keys))
-    elif isinstance(data, dict) and "agents" in data and isinstance(data["agents"], list):
-        _print_table(data["agents"])
-    elif isinstance(data, dict) and "tenants" in data and isinstance(data["tenants"], list):
-        _print_table(data["tenants"])
-    elif isinstance(data, dict) and "events" in data and isinstance(data["events"], list):
-        _print_table(data["events"][:20])
-        if len(data["events"]) > 20:
-            print(f"... and {len(data['events']) - 20} more")
+    """Simple table output for lists of dicts.
+
+    A known collection prints its header row even when empty (an operator
+    should see the schema, not a bare ``[]``); unknown shapes fall back to JSON.
+    """
+    if isinstance(data, list):
+        if data and isinstance(data[0], dict):
+            _print_rows(data)
+        else:
+            print("No records.")
+    elif isinstance(data, dict):
+        if isinstance(data.get("agents"), list):
+            if data["agents"]:
+                _print_rows(data["agents"])
+            else:
+                print("agent_id | type | tenant | status")
+                print("No agents found.")
+        elif isinstance(data.get("tenants"), list):
+            if data["tenants"]:
+                _print_rows(data["tenants"])
+            else:
+                print("tenant_id | display_name")
+                print("No tenants found.")
+        elif isinstance(data.get("events"), list):
+            events = data["events"][:20]
+            if events:
+                _print_rows(events)
+            else:
+                print("event_id | event_type | decision")
+                print("No events found.")
+            if len(data["events"]) > 20:
+                print(f"... and {len(data['events']) - 20} more")
+        else:
+            print(json.dumps(data, indent=2, default=str))
     else:
         print(json.dumps(data, indent=2, default=str))
+
+
+def _print_rows(rows: list[dict[str, Any]]) -> None:
+    """Print rows under a header derived from the first row's keys."""
+    keys = list(rows[0].keys())
+    # Header
+    print(" | ".join(keys))
+    print("-" * (sum(len(k) for k in keys) + 3 * len(keys)))
+    for row in rows:
+        print(" | ".join(str(row.get(k, "")) for k in keys))
 
 
 def _handle_sdk_error(exc: Exception) -> int:

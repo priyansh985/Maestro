@@ -5,6 +5,7 @@ Supports JSON and PDF output formats.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import time
 from dataclasses import asdict, dataclass, field
@@ -281,8 +282,6 @@ def generate_combined_report(
 
 # --- CLI Entry Point ---
 
-import hashlib
-
 
 def compliance_export_cli():
     """CLI entry point for compliance export."""
@@ -306,10 +305,7 @@ def compliance_export_cli():
         import os
         import secrets
         signing_key = os.environ.get("MAESTRO_SIGNING_KEY")
-        if signing_key:
-            signing_key = base64.b64decode(signing_key)
-        else:
-            signing_key = secrets.token_bytes(32)
+        signing_key = base64.b64decode(signing_key) if signing_key else secrets.token_bytes(32)
     
     # Load config
     config = {}

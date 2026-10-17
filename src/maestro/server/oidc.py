@@ -125,9 +125,9 @@ class OIDCClient:
             self._jwks_cache.fetched_at = time.time()
             return self._jwks_cache.keys
         except httpx.HTTPError as e:
-            raise JWKSFetchError(f"Failed to fetch JWKS: {e}")
+            raise JWKSFetchError(f"Failed to fetch JWKS: {e}") from e
         except (json.JSONDecodeError, KeyError) as e:
-            raise JWKSFetchError(f"Invalid JWKS response: {e}")
+            raise JWKSFetchError(f"Invalid JWKS response: {e}") from e
     
     def get_signing_key(self, kid: str) -> dict:
         """Get signing key by key ID, fetching JWKS if needed."""
@@ -179,11 +179,11 @@ class OIDCClient:
             return claims
         
         except jose_exceptions.ExpiredSignatureError:
-            raise TokenValidationError("Token has expired")
+            raise TokenValidationError("Token has expired") from None
         except jose_exceptions.JWTClaimsError as e:
-            raise TokenValidationError(f"Invalid claims: {e}")
+            raise TokenValidationError(f"Invalid claims: {e}") from e
         except jose_exceptions.JWTError as e:
-            raise TokenValidationError(f"JWT validation failed: {e}")
+            raise TokenValidationError(f"JWT validation failed: {e}") from e
     
     def validate_access_token(self, access_token: str) -> dict:
         """Validate an access token (same as ID token but no nonce check)."""
@@ -211,7 +211,7 @@ class OIDCClient:
             token_data = response.json()
             return OIDCTokens(**token_data)
         except httpx.HTTPError as e:
-            raise OIDCError(f"Token exchange failed: {e}")
+            raise OIDCError(f"Token exchange failed: {e}") from e
     
     def refresh_tokens(self, refresh_token: str) -> OIDCTokens:
         """Refresh access tokens using refresh token."""
@@ -232,7 +232,7 @@ class OIDCClient:
             token_data = response.json()
             return OIDCTokens(**token_data)
         except httpx.HTTPError as e:
-            raise OIDCError(f"Token refresh failed: {e}")
+            raise OIDCError(f"Token refresh failed: {e}") from e
     
     def revoke_token(self, token: str, token_type_hint: str = "access_token") -> bool:
         """Revoke a token (RFC 7009)."""
@@ -265,7 +265,7 @@ class OIDCClient:
             response.raise_for_status()
             return response.json()
         except httpx.HTTPError as e:
-            raise OIDCError(f"UserInfo request failed: {e}")
+            raise OIDCError(f"UserInfo request failed: {e}") from e
     
     # --- Authorization URL ---
     
