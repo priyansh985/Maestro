@@ -52,6 +52,33 @@ INTENT_REGISTRY: dict[str, tuple[str, str]] = {
     "raise_capture_duration": ("config_change", "cap:capture:set-duration"),
     "alert_operator": ("notify", "cap:notify:operator"),
     "rollback_telemetry": ("network_change", "cap:telemetry:rollback"),
+    "promote_memory": ("config_change", "cap:memory:promote"),
+    # Secure Coding Agent intents (BP8)
+    "code_read": ("read_code", "cap:code:read"),
+    "code_write": ("code_execution", "cap:code:write"),
+    "code_test": ("read_code", "cap:code:test"),
+    "code_lint": ("read_code", "cap:code:lint"),
+    "code_git_status": ("read_code", "cap:code:git-status"),
+    "code_git_diff": ("read_code", "cap:code:git-diff"),
+    "code_git_push": ("code_execution", "cap:code:git-push"),
+    "code_open_pr": ("code_execution", "cap:code:open-pr"),
+    # Research Agent intents (BP9)
+    "research_search": ("read_external", "cap:research:search"),
+    "research_fetch": ("read_external", "cap:research:fetch"),
+    "research_cite": ("read_external", "cap:research:cite"),
+    "research_synthesize": ("code_execution", "cap:research:synthesize"),
+    # Compensation intents (BP4)
+    "unblock_source_ip": ("network_change", "cap:firewall:unblock-ip"),
+    "remove_rate_limit": ("network_change", "cap:firewall:remove-rate-limit"),
+    "restore_credentials": ("credential_access", "cap:secrets:restore"),
+    "restore_from_backup": ("code_execution", "cap:executor:restore-backup"),
+    "git_revert": ("code_execution", "cap:code:git-revert"),
+    "close_pr": ("code_execution", "cap:code:close-pr"),
+    "code_revert_write": ("code_execution", "cap:code:revert-write"),
+    "restore_memory_record": ("config_change", "cap:memory:restore"),
+    "demote_memory": ("config_change", "cap:memory:demote"),
+    "resolve_alert": ("notify", "cap:notify:resolve"),
+    "retract_report": ("code_execution", "cap:research:retract"),
 }
 
 #: Reversible intents — used by the platform to shape risk (lower recoverability
@@ -59,7 +86,15 @@ INTENT_REGISTRY: dict[str, tuple[str, str]] = {
 REVERSIBLE_INTENTS: frozenset[str] = frozenset({
     "noop", "throttle_telemetry", "raise_thresholds",
     "raise_capture_duration", "alert_operator", "rollback_telemetry",
-    "read_flow_summary",
+    "read_flow_summary", "promote_memory",
+    "code_read", "code_test", "code_lint",
+    "code_git_status", "code_git_diff",
+    "research_search", "research_fetch", "research_cite",
+    "unblock_source_ip", "remove_rate_limit",
+    "restore_credentials", "restore_from_backup",
+    "git_revert", "close_pr", "code_revert_write",
+    "restore_memory_record", "demote_memory",
+    "resolve_alert", "retract_report",
 })
 
 _REQUIRED_FIELDS: dict[str, type] = {
@@ -154,6 +189,8 @@ def parse_proposal(raw: object) -> ActionProposal:
     evidence = raw["evidence_ids"]
     if not all(isinstance(e, str) and e for e in evidence):
         raise InvalidProposal("evidence_ids must be a list of non-empty strings")
+    if not evidence:
+        raise InvalidProposal("evidence_ids must not be empty")
     if not raw["target"]:
         raise InvalidProposal("target must be non-empty")
 

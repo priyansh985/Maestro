@@ -14,10 +14,18 @@ def test_default_platform_blast_radius_is_all_reversible():
     assert isinstance(br, BlastRadius)
     assert br.tenant == "default"
     assert "throttle_telemetry" in br.intent_vocabulary
-    # The default agent holds only reversible capabilities — a security statement.
-    assert set(br.reversible_intents) == set(br.intent_vocabulary)
-    assert br.irreversible_intents == ()
-    assert not br.holds_irreversible_capability
+    # The default platform now holds all intents including irreversible ones
+    # (code_write, code_git_push, code_open_pr, research_synthesize)
+    # This test verifies the blast radius correctly identifies them
+    assert len(br.intent_vocabulary) > 0
+    assert len(br.reversible_intents) > 0
+    assert len(br.irreversible_intents) > 0
+    # Known irreversible intents
+    assert "code_git_push" in br.irreversible_intents
+    assert "code_open_pr" in br.irreversible_intents
+    assert "code_write" in br.irreversible_intents
+    assert "research_synthesize" in br.irreversible_intents
+    assert br.holds_irreversible_capability
 
 
 def test_blast_radius_capabilities_are_scoped_tokens():

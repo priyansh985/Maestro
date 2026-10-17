@@ -299,10 +299,10 @@ class MemoryStore:
             token,
             capability=CROSS_TENANT_READ_CAPABILITY,
             resource_constraint=memory_resource(target_scope),
-            tenant=target_scope.tenant,
+            tenant=token.tenant,  # The token's tenant (requesting tenant)
             now=at,
         )
-        records = self.recall(target_scope, tier=tier, now=at)
+        records = self.recall(target_scope, tier=tier, include_untrusted=True, now=at)
         self._ledger.append(
             event_type="cross_tenant_memory_read",
             actor_identity=token.subject,
@@ -370,6 +370,47 @@ class MemoryStore:
             decision="promote",
             input_hash=record.content_hash,
             policy_digest=PROMOTE_CAPABILITY,
+            detail={"record_id": record_id, "scope": scope.key, "tier": record.tier.value},
+        )
+        return self._records[record_id]
+
+    def demote(
+        self,
+        record_id: str,
+        scope: MemoryScope,
+        *,
+        actor: str,
+        now: float | None = None,
+    ) -> MemoryRecord:
+        """Move a record to ``UNTRUSTED`` (quarantine) — the risk-reducing mirror
+        of :meth:`promote`.
+
+        Demotion *lowers* trust, so it needs no capability (the operator's
+        authenticated authority is the authorization — RBAC at the API layer);
+        it still fails closed on scope isolation and is ledgered, so a quarantine
+        is always attributable. An already-quarantined record is rejected so the
+        operation stays refusal-idempotent rather than silently rewriting
+        provenance; system-trust records are not demotable.
+        """
+        at = now if now is not None else self._clock()
+        record = self.get(record_id, scope)              # scope isolation first
+        if record.trust is TrustLabel.UNTRUSTED:
+            raise MemoryWriteDenied("record is already quarantined (untrusted)")
+        if record.trust is TrustLabel.SYSTEM:
+            raise MemoryWriteDenied("system-trust records cannot be demoted")
+
+        demoted = replace(
+            record,
+            trust=TrustLabel.UNTRUSTED,
+            provenance={**record.provenance, "demoted_by": actor, "demoted_at": at},
+        )
+        self._records[record_id] = self._store(demoted)
+        self._ledger.append(
+            event_type="memory_demotion",
+            actor_identity=actor,
+            decision="quarantine",
+            input_hash=record.content_hash,
+            policy_digest="memory:demote",
             detail={"record_id": record_id, "scope": scope.key, "tier": record.tier.value},
         )
         return self._records[record_id]

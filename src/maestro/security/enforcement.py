@@ -103,6 +103,18 @@ class EnforcementResult:
     state: ActionState = ActionState.DENIED
     decision_card: dict = field(default_factory=dict)
 
+    def as_dict(self) -> dict[str, object]:
+        return {
+            "allowed": self.allowed,
+            "decision": self.decision.value,
+            "reason": self.reason,
+            "residual_risk": self.residual_risk,
+            "output": self.output,
+            "event_id": self.event_id,
+            "state": self.state.value,
+            "decision_card": self.decision_card,
+        }
+
 
 class PolicyEnforcementPoint:
     """Independent authorization + execution boundary for agent-proposed actions."""

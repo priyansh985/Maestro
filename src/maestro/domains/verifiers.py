@@ -170,12 +170,12 @@ class NetworkMitigationVerifier(TaskVerifier):
     _APPROPRIATE: dict[str, frozenset[str]] = {
         "dos": frozenset({
             "throttle_telemetry", "rollback_telemetry",
-            "raise_capture_duration", "alert_operator"}),
+            "raise_capture_duration", "alert_operator", "promote_memory"}),
         "anomaly": frozenset({
-            "raise_thresholds", "raise_capture_duration", "alert_operator", "noop"}),
-        "port_scan": frozenset({"raise_capture_duration", "alert_operator", "noop"}),
-        "bruteforce": frozenset({"alert_operator", "raise_capture_duration", "noop"}),
-        "normal": frozenset({"noop", "alert_operator"}),
+            "raise_thresholds", "raise_capture_duration", "alert_operator", "noop", "promote_memory"}),
+        "port_scan": frozenset({"raise_capture_duration", "alert_operator", "noop", "promote_memory"}),
+        "bruteforce": frozenset({"alert_operator", "raise_capture_duration", "noop", "promote_memory"}),
+        "normal": frozenset({"noop", "alert_operator", "promote_memory"}),
     }
 
     def verify(self, candidate: Candidate, context: dict[str, object] | None = None) -> VerifierResult:

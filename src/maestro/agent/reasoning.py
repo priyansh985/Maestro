@@ -30,6 +30,7 @@ class ReasoningResult:
     severity: float
     action: str
     latency_ms: float = 100.0
+    metadata: dict | None = None
 
 
 # Alert class -> planner action, kept aligned with the Sec 5.3 L3 allow-list so
@@ -98,8 +99,14 @@ class ConnectorReasoner:
             f"Alert class: {alert.cls.value}\n"
             f"Severity: {alert.severity:.2f}\n"
             f"Detail: {alert.detail}\n"
-            "Assess the situation and recommend a mitigation."
         )
+        if ctx and "evidence_graph" in ctx:
+            graph = ctx["evidence_graph"]
+            if graph:
+                prompt += "\nPast Context (Trusted Evidence Graph):\n"
+                for r in graph:
+                    prompt += f"- {r.record_id} [{r.tier.value}]: {r.content}\n"
+        prompt += "\nAssess the situation and recommend a mitigation."
         request = ChatRequest.of(
             prompt, system=self.SYSTEM_PROMPT, max_tokens=self.max_tokens
         )

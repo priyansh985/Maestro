@@ -139,3 +139,7 @@ class Ledger:
 
     def __len__(self) -> int:
         return len(self._events)
+
+    def __bool__(self) -> bool:
+        """A ledger is always truthy if instantiated (even if empty)."""
+        return True

@@ -35,9 +35,13 @@ of kernel-level containment.
 from __future__ import annotations
 
 import json
+import os
+import subprocess
+import tempfile
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FuturesTimeout
 from dataclasses import dataclass
+from pathlib import Path
 
 from ..orchestration.journal import ActivityRecord, Journal
 from .action import ActionProposal
@@ -67,10 +71,21 @@ class SandboxPolicy:
 
     max_output_bytes: int = 64 * 1024
     timeout_s: float = 0.0
+    # External sandbox configuration
+    use_external: bool = False
+    sandbox_type: str = "gvisor"  # "gvisor", "docker", "none"
+    sandbox_image: str = "python:3.11-slim"
+    sandbox_network: str = "none"
 
 
 class ExecutionSandbox:
-    """Confines an adapter's execution + result at the side-effect boundary."""
+    """Confines an adapter's execution + result at the side-effect boundary.
+
+    Supports three execution modes:
+    1. **In-process** (default): ThreadPoolExecutor with timeout, scope confinement
+    2. **Docker**: Runs adapter in a container with no network, read-only fs
+    3. **gVisor**: Runs via `runsc` for stronger isolation
+    """
 
     def __init__(
         self,
@@ -84,6 +99,10 @@ class ExecutionSandbox:
     @property
     def journal(self) -> Journal | None:
         return self._journal
+
+    @property
+    def policy(self) -> SandboxPolicy:
+        return self._policy
 
     def run(
         self,
@@ -111,18 +130,31 @@ class ExecutionSandbox:
                 return self._confine(recorded.result, proposal), True
 
         # 2. First execution — run the adapter under the timeout budget.
-        output = self._invoke(adapter, proposal)
-        confined = self._confine(output, proposal)
-
+        try:
+            if self._policy.use_external:
+                output = self._invoke_external(adapter, proposal)
+            else:
+                output = self._invoke(adapter, proposal)
+            confined = self._confine(output, proposal)
+            status = "completed"
+            error = ""
+        except Exception as exc:
+            # Record failed execution in journal
+            if idempotency_key is not None and self._journal is not None:
+                self._journal.record(ActivityRecord(
+                    idempotency_key, _SEQ, proposal.intent, "failed", None, str(exc), 1))
+            raise
+        
         # 3. Journal the confined result so a future retry replays it.
         if idempotency_key is not None and self._journal is not None:
             self._journal.record(ActivityRecord(
-                idempotency_key, _SEQ, proposal.intent, "completed", confined, "", 1))
+                idempotency_key, _SEQ, proposal.intent, status, confined, error, 1))
         return confined, False
 
     # -- internals ----------------------------------------------------------- #
+
     def _invoke(self, adapter, proposal: ActionProposal) -> object:
-        """Run the adapter, optionally bounded by a wall-clock timeout."""
+        """Run the adapter inline or with ThreadPoolExecutor timeout."""
         if self._policy.timeout_s <= 0:
             return adapter(proposal)          # inline: deterministic + thread-free
         with ThreadPoolExecutor(max_workers=1) as pool:
@@ -135,6 +167,107 @@ class ExecutionSandbox:
                 raise SandboxViolation(
                     f"adapter for {proposal.intent!r} exceeded "
                     f"{self._policy.timeout_s}s timeout") from exc
+
+    def _invoke_external(self, adapter, proposal: ActionProposal) -> object:
+        """Run adapter in external sandbox (Docker/gVisor)."""
+        # Serialize adapter call to JSON for the sandbox
+        adapter_data = {
+            "adapter_module": adapter.__module__,
+            "adapter_name": adapter.__name__,
+            "proposal": proposal.as_dict(),
+        }
+
+        if self._policy.sandbox_type == "docker":
+            return self._run_docker(adapter_data)
+        elif self._policy.sandbox_type == "gvisor":
+            return self._run_gvisor(adapter_data)
+        else:
+            raise SandboxViolation(f"Unknown sandbox type: {self._policy.sandbox_type}")
+
+    def _run_docker(self, adapter_data: dict) -> dict:
+        """Execute adapter in Docker container with strict isolation."""
+        # Write adapter data to temp file
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+            json.dump(adapter_data, f)
+            input_file = f.name
+
+        try:
+            # Run container with: no network, read-only fs, no new privs, memory limit
+            cmd = [
+                "docker", "run", "--rm", "-i",
+                "--network=none",
+                "--read-only",
+                "--security-opt=no-new-privileges",
+                "--memory=256m",
+                "--cpus=0.5",
+                "--pids-limit=64",
+                "-v", f"{input_file}:/input.json:ro",
+                self._policy.sandbox_image,
+                "python", "-c", """
+import json, sys, importlib
+with open('/input.json') as f:
+    data = json.load(f)
+module = importlib.import_module(data['adapter_module'])
+adapter = getattr(module, data['adapter_name'])
+from maestro.security.action import ActionProposal
+proposal = ActionProposal(**data['proposal'])
+result = adapter(proposal)
+print(json.dumps(result))
+"""
+            ]
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=self._policy.timeout_s or 30
+            )
+            if result.returncode != 0:
+                raise SandboxViolation(f"Docker execution failed: {result.stderr}")
+            return json.loads(result.stdout.strip())
+
+        finally:
+            os.unlink(input_file)
+
+    def _run_gvisor(self, adapter_data: dict) -> dict:
+        """Execute adapter via gVisor (runsc)."""
+        # Similar to Docker but using runsc
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+            json.dump(adapter_data, f)
+            input_file = f.name
+
+        try:
+            cmd = [
+                "runsc", "run", "--rm",
+                "--network=none",
+                "--platform=ptrace",  # or kvm
+                "--memory=256m",
+                "--cpus=0.5",
+                "-v", f"{input_file}:/input.json:ro",
+                self._policy.sandbox_image,
+                "python", "-c", """
+import json, sys, importlib
+with open('/input.json') as f:
+    data = json.load(f)
+module = importlib.import_module(data['adapter_module'])
+adapter = getattr(module, data['adapter_name'])
+from maestro.security.action import ActionProposal
+proposal = ActionProposal(**data['proposal'])
+result = adapter(proposal)
+print(json.dumps(result))
+"""
+            ]
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=self._policy.timeout_s or 30
+            )
+            if result.returncode != 0:
+                raise SandboxViolation(f"gVisor execution failed: {result.stderr}")
+            return json.loads(result.stdout.strip())
+
+        finally:
+            os.unlink(input_file)
 
     def _confine(self, output: object, proposal: ActionProposal) -> dict:
         """Assert the result is a bounded, in-scope JSON dict, or fail closed."""
@@ -159,3 +292,21 @@ class ExecutionSandbox:
                 f"adapter claimed target {claimed!r} outside authorized scope "
                 f"{proposal.target!r}")
         return output
+
+
+def create_sandbox_from_config(config_path: str | None = None) -> ExecutionSandbox:
+    """Create sandbox from YAML config (for production deployment)."""
+    import yaml
+    policy = SandboxPolicy()
+    if config_path and Path(config_path).exists():
+        with open(config_path) as f:
+            cfg = yaml.safe_load(f)
+        sandbox_cfg = cfg.get("sandbox", {})
+        policy = SandboxPolicy(
+            max_output_bytes=sandbox_cfg.get("max_output_bytes", 64 * 1024),
+            timeout_s=sandbox_cfg.get("timeout_s", 0.0),
+            use_external=sandbox_cfg.get("use_external", False),
+            sandbox_type=sandbox_cfg.get("type", "gvisor"),
+            sandbox_image=sandbox_cfg.get("image", "python:3.11-slim"),
+        )
+    return ExecutionSandbox(policy=policy)

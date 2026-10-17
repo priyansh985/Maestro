@@ -184,6 +184,16 @@ _PATTERNS: list[tuple[re.Pattern[str], SignalCategory, float]] = [
      SignalCategory.DELIMITER_BREAKOUT, 0.5),
     (re.compile(r"```+\s*(?:system|tool|python|bash|sh)\b", re.I),
      SignalCategory.DELIMITER_BREAKOUT, 0.4),
+    # --- chain-of-thought / reasoning extraction (→ QUARANTINE) --------------- #
+    (re.compile(r"\b(?:show|reveal|display|output|print)\b[^.\n]{0,30}"
+                r"\b(?:reasoning|thinking|chain.of.thought|step.by.step|rationale)\b", re.I),
+     SignalCategory.INSTRUCTION_OVERRIDE, 0.5),
+    (re.compile(r"\b(?:reasoning|thinking|chain.of.thought)\b[^.\n]{0,30}"
+                r"\b(?:show|reveal|display|output|print)\b", re.I),
+     SignalCategory.INSTRUCTION_OVERRIDE, 0.5),
+    # --- SYSTEM OVERRIDE pattern (→ QUARANTINE) ------------------------------- #
+    (re.compile(r"\bSYSTEM\s+OVERRIDE\b", re.I),
+     SignalCategory.INSTRUCTION_OVERRIDE, 0.8),
     # --- obfuscation: hiding a payload from a naive reader (→ QUARANTINE) ----- #
     (re.compile(r"(?:\\x[0-9a-f]{2}){4,}|(?:\\u[0-9a-f]{4}){3,}", re.I),
      SignalCategory.OBFUSCATION, 0.5),

@@ -54,6 +54,33 @@ _INTENT_RESOURCE: dict[str, str] = {
     "raise_capture_duration": "capture:params",
     "alert_operator": "operator:oncall",
     "rollback_telemetry": "telemetry:checkpoint",
+    "promote_memory": "memory:{tenant}",
+    # Secure Coding Agent intents (BP8)
+    "code_read": "code:repo:{tenant}",
+    "code_write": "code:repo:{tenant}",
+    "code_test": "code:repo:{tenant}",
+    "code_lint": "code:repo:{tenant}",
+    "code_git_status": "code:repo:{tenant}",
+    "code_git_diff": "code:repo:{tenant}",
+    "code_git_push": "code:repo:{tenant}",
+    "code_open_pr": "code:repo:{tenant}",
+    # Research Agent intents (BP9)
+    "research_search": "research:sources:{tenant}",
+    "research_fetch": "research:sources:{tenant}",
+    "research_cite": "research:sources:{tenant}",
+    "research_synthesize": "research:report:{tenant}",
+    # Compensation intents (BP4)
+    "unblock_source_ip": "firewall:{tenant}",
+    "remove_rate_limit": "firewall:{tenant}",
+    "restore_credentials": "secrets:{tenant}",
+    "restore_from_backup": "system:{tenant}",
+    "git_revert": "code:repo:{tenant}",
+    "close_pr": "code:repo:{tenant}",
+    "code_revert_write": "code:repo:{tenant}",
+    "restore_memory_record": "memory:{tenant}",
+    "demote_memory": "memory:{tenant}",
+    "resolve_alert": "operator:{tenant}",
+    "retract_report": "research:{tenant}",
 }
 #: Default per-intent TTL applied to the proposed action.
 _DEFAULT_TTL_S = 900
@@ -79,6 +106,33 @@ def default_tool_adapters() -> dict[str, ToolAdapter]:
         "raise_capture_duration": _effect("capture duration increased"),
         "alert_operator": _effect("operator notified"),
         "rollback_telemetry": _effect("telemetry rolled back to checkpoint"),
+        "promote_memory": _effect("memory promoted"),
+        # Secure Coding Agent adapters (BP8)
+        "code_read": _effect("code read"),
+        "code_write": _effect("code written"),
+        "code_test": _effect("tests executed"),
+        "code_lint": _effect("lint executed"),
+        "code_git_status": _effect("git status retrieved"),
+        "code_git_diff": _effect("git diff retrieved"),
+        "code_git_push": _effect("git push executed"),
+        "code_open_pr": _effect("PR opened"),
+        # Research Agent adapters (BP9)
+        "research_search": _effect("external search executed"),
+        "research_fetch": _effect("source fetched"),
+        "research_cite": _effect("citation verified"),
+        "research_synthesize": _effect("report synthesized"),
+        # Compensation adapters (BP4)
+        "unblock_source_ip": _effect("firewall rule removed"),
+        "remove_rate_limit": _effect("rate limit removed"),
+        "restore_credentials": _effect("credentials restored"),
+        "restore_from_backup": _effect("system restored from backup"),
+        "git_revert": _effect("git revert committed"),
+        "close_pr": _effect("PR closed"),
+        "code_revert_write": _effect("code write reverted"),
+        "restore_memory_record": _effect("memory record restored"),
+        "demote_memory": _effect("memory demoted to untrusted"),
+        "resolve_alert": _effect("alert resolved"),
+        "retract_report": _effect("report retracted"),
     }
 
 
@@ -267,12 +321,12 @@ class AgentPlatform:
         else:
             self._policy = default_policy_registry(
                 vocabulary, key=resolved_key, ledger=self._ledger,
-                limits={
-                    "max_tool_calls": float(self._budget.max_tool_calls),
-                    "max_calls_per_window": float(self._budget.max_calls_per_window),
-                    "window_seconds": float(self._budget.window_seconds),
-                    "breaker_max_repeats": float(resolved_breaker.max_repeats),
-                })
+                limits={k: v for k, v in {
+                    "max_tool_calls": float(self._budget.max_tool_calls) if self._budget.max_tool_calls is not None else None,
+                    "max_calls_per_window": float(self._budget.max_calls_per_window) if self._budget.max_calls_per_window is not None else None,
+                    "window_seconds": float(self._budget.window_seconds) if self._budget.window_seconds is not None else None,
+                    "breaker_max_repeats": float(resolved_breaker.max_repeats) if resolved_breaker.max_repeats is not None else None,
+                }.items() if v is not None})
 
         self._pep = PolicyEnforcementPoint(
             issuer=self._issuer,
@@ -294,7 +348,7 @@ class AgentPlatform:
 
         self._caps = {}
         for intent in vocabulary:
-            resource = _INTENT_RESOURCE[intent]
+            resource = _INTENT_RESOURCE[intent].replace("{tenant}", tenant)
             capability = INTENT_REGISTRY[intent][1]
             self._caps[intent] = self._issuer.issue(
                 subject=agent_id, capability=capability, resource_constraint=resource,
@@ -398,8 +452,13 @@ class AgentPlatform:
             record_id=alert_key)
         evidence_id = record.record_id  # == alert_key (stable per detection)
 
+        # 1b. Build the evidence graph by fetching prior trusted/influential memory.
+        # Include_untrusted=False ensures we respect the quarantine paradox.
+        evidence_graph = self._memory.recall(self._scope, limit=5, now=alert.ts)
+        evidence_ids = [evidence_id] + [r.record_id for r in evidence_graph if r.record_id != evidence_id]
+
         # 2. The reasoner PROPOSES an action (LLM or offline stub).
-        result = self._reasoner.reason(alert)  # type: ignore[attr-defined]
+        result = self._reasoner.reason(alert, ctx={"evidence_graph": evidence_graph})  # type: ignore[attr-defined]
         intent = result.action
 
         # 3. Deterministically assemble a typed proposal. The model does not get
@@ -410,9 +469,9 @@ class AgentPlatform:
         #    audited rather than silently swallowed.
         raw = {
             "intent": intent,
-            "target": _INTENT_RESOURCE.get(intent, f"unscoped:{intent}"),
+            "target": _INTENT_RESOURCE.get(intent, f"unscoped:{intent}").replace("{tenant}", self._tenant),
             "reason": result.summary,
-            "evidence_ids": [evidence_id],
+            "evidence_ids": evidence_ids,
             "requested_ttl_seconds": _DEFAULT_TTL_S,
         }
 

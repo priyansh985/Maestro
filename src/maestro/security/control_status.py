@@ -135,9 +135,11 @@ CONTROLS: list[Control] = [
               "MemoryStore, so quarantine-on-ingest is non-optional and an "
               "injected poison record is inert on the running agent "
               "(test_poisoned_memory_is_quarantined_and_inert_on_the_live_agent). "
-              "Promotion to TRUSTED still requires an independent, scoped "
+              "Promotion to TRUSTED requires an independent, scoped "
               "cap:memory:promote and is recorded in the platform's unified "
-              "ledger; adversarially tested (self-promotion, expired/wrong-tenant "
+              "ledger. In BP5, this promotion is fully wired as a gated action "
+              "intent (`promote_memory`) executed through the PEP boundary; "
+              "adversarially tested (self-promotion, expired/wrong-tenant "
               "capability, cross-scope promotion all denied).",
     ),
     Control(
@@ -376,8 +378,9 @@ CONTROLS: list[Control] = [
               "detects insertion/deletion/modification (adversarially tested "
               "against on-disk and in-memory tampering — hence 'verified'). "
               "Enforced on the AgentPlatform path: every outcome (allow AND deny) "
-              "is recorded. External anchoring + evidence graph remain Phase-3 "
-              "targets; the API's LogStore is a separate, non-forensic log.",
+              "is recorded. External anchoring remains a Phase-3 target "
+              "(evidence graph integration was completed in BP5); the API's LogStore "
+              "is a separate, non-forensic log.",
     ),
     Control(
         "CTRL-L5-03", "Operational residual-risk scoring", "L5",

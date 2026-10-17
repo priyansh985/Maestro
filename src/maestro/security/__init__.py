@@ -21,6 +21,16 @@ from __future__ import annotations
 from .action import ActionProposal, InvalidProposal, parse_proposal
 from .budget import AutonomyBudget, BudgetError
 from .circuit_breaker import CircuitBreaker
+from .compensation import (
+    COMPENSATION_REGISTRY,
+    CompensationAction,
+    CompensationError,
+    compensate,
+    get_compensation,
+    list_compensations,
+    register_compensation,
+    validate_compensation_registry,
+)
 from .confidence import (
     ConfidenceBand,
     ConfidenceSignals,
@@ -59,6 +69,16 @@ from .perimeter import (
     SignalCategory,
     SymbolicVariable,
     extract_variables,
+)
+from .release_gate import (
+    DEFAULT_GATES,
+    Gate,
+    GateBundle,
+    GateBundleResult,
+    GateRegistry,
+    GateResult,
+    ReleaseGateEvaluator,
+    create_gate_bundle,
 )
 from .risk_engine import (
     CAPABILITY_REQUIRED_ACTIONS,
@@ -130,4 +150,22 @@ __all__ = [
     "PerimeterResult",
     "Disposition",
     "extract_variables",
+    # compensation framework
+    "CompensationAction",
+    "CompensationError",
+    "compensate",
+    "get_compensation",
+    "register_compensation",
+    "list_compensations",
+    "validate_compensation_registry",
+    "COMPENSATION_REGISTRY",
+    # release gate framework
+    "Gate",
+    "GateBundle",
+    "GateResult",
+    "GateBundleResult",
+    "GateRegistry",
+    "ReleaseGateEvaluator",
+    "create_gate_bundle",
+    "DEFAULT_GATES",
 ]

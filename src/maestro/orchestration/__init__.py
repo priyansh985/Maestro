@@ -20,6 +20,18 @@ from .engine import (
 )
 from .journal import ActivityRecord, Journal, JournalError
 
+try:
+    from .temporal_backend import (
+        TemporalConfig,
+        TemporalJournal,
+        TemporalNotAvailableError,
+        create_temporal_journal,
+        load_temporal_config,
+    )
+    _TEMPORAL_AVAILABLE = True
+except ImportError:
+    _TEMPORAL_AVAILABLE = False
+
 __all__ = [
     "DEFAULT_RETRY",
     "ActivityFailed",
@@ -32,3 +44,12 @@ __all__ = [
     "Workflow",
     "WorkflowContext",
 ]
+
+if _TEMPORAL_AVAILABLE:
+    __all__ += [
+        "TemporalConfig",
+        "TemporalJournal",
+        "TemporalNotAvailableError",
+        "create_temporal_journal",
+        "load_temporal_config",
+    ]
