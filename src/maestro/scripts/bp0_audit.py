@@ -95,6 +95,12 @@ def _auth_note(source: str, method: str, route: str) -> str:
         if method in _MUTATING:
             return "OPERATOR (bearer token + RBAC + rate limit, CTRL-L4-03/07)"
         return "VIEWER (bearer token + RBAC + rate limit, CTRL-L4-03/07)"
+    if "agents_api" in source:
+        # Fleet router: require_viewer at the router level; mutating routes
+        # additionally require require_operator per endpoint.
+        if method in _MUTATING:
+            return "OPERATOR (bearer token + RBAC + rate limit, CTRL-L4-03/07)"
+        return "VIEWER (bearer token + RBAC + rate limit, CTRL-L4-03/07)"
     if "connectors_api" in source:
         if method in _MUTATING:
             return "OPERATOR (bearer token + RBAC + rate limit, CTRL-L4-03/07)"

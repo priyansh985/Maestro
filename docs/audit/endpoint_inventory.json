@@ -1,8 +1,71 @@
 {
   "schema_version": "1.0",
-  "endpoint_count": 34,
-  "mutating_count": 18,
+  "endpoint_count": 52,
+  "mutating_count": 28,
   "endpoints": [
+    {
+      "method": "GET",
+      "route": "/agents",
+      "mutating": false,
+      "source": "src/maestro/server/agents_api.py",
+      "auth": "VIEWER (bearer token + RBAC + rate limit, CTRL-L4-03/07)"
+    },
+    {
+      "method": "POST",
+      "route": "/agents",
+      "mutating": true,
+      "source": "src/maestro/server/agents_api.py",
+      "auth": "OPERATOR (bearer token + RBAC + rate limit, CTRL-L4-03/07)"
+    },
+    {
+      "method": "DELETE",
+      "route": "/agents/{agent_id}",
+      "mutating": true,
+      "source": "src/maestro/server/agents_api.py",
+      "auth": "OPERATOR (bearer token + RBAC + rate limit, CTRL-L4-03/07)"
+    },
+    {
+      "method": "GET",
+      "route": "/agents/{agent_id}",
+      "mutating": false,
+      "source": "src/maestro/server/agents_api.py",
+      "auth": "VIEWER (bearer token + RBAC + rate limit, CTRL-L4-03/07)"
+    },
+    {
+      "method": "POST",
+      "route": "/agents/{agent_id}/alert",
+      "mutating": true,
+      "source": "src/maestro/server/agents_api.py",
+      "auth": "OPERATOR (bearer token + RBAC + rate limit, CTRL-L4-03/07)"
+    },
+    {
+      "method": "GET",
+      "route": "/agents/{agent_id}/blast-radius",
+      "mutating": false,
+      "source": "src/maestro/server/agents_api.py",
+      "auth": "VIEWER (bearer token + RBAC + rate limit, CTRL-L4-03/07)"
+    },
+    {
+      "method": "POST",
+      "route": "/agents/{agent_id}/halt",
+      "mutating": true,
+      "source": "src/maestro/server/agents_api.py",
+      "auth": "OPERATOR (bearer token + RBAC + rate limit, CTRL-L4-03/07)"
+    },
+    {
+      "method": "GET",
+      "route": "/agents/{agent_id}/logs",
+      "mutating": false,
+      "source": "src/maestro/server/agents_api.py",
+      "auth": "VIEWER (bearer token + RBAC + rate limit, CTRL-L4-03/07)"
+    },
+    {
+      "method": "POST",
+      "route": "/agents/{agent_id}/resume",
+      "mutating": true,
+      "source": "src/maestro/server/agents_api.py",
+      "auth": "OPERATOR (bearer token + RBAC + rate limit, CTRL-L4-03/07)"
+    },
     {
       "method": "GET",
       "route": "/",
@@ -201,10 +264,38 @@
     },
     {
       "method": "GET",
+      "route": "/ledger/export",
+      "mutating": false,
+      "source": "src/maestro/server/control_api.py",
+      "auth": "VIEWER (bearer token + RBAC + rate limit, CTRL-L4-03/07)"
+    },
+    {
+      "method": "GET",
+      "route": "/ledger/verify",
+      "mutating": false,
+      "source": "src/maestro/server/control_api.py",
+      "auth": "VIEWER (bearer token + RBAC + rate limit, CTRL-L4-03/07)"
+    },
+    {
+      "method": "GET",
       "route": "/memory",
       "mutating": false,
       "source": "src/maestro/server/control_api.py",
       "auth": "VIEWER (bearer token + RBAC + rate limit, CTRL-L4-03/07)"
+    },
+    {
+      "method": "POST",
+      "route": "/memory/promote",
+      "mutating": true,
+      "source": "src/maestro/server/control_api.py",
+      "auth": "OPERATOR (bearer token + RBAC + rate limit, CTRL-L4-03/07)"
+    },
+    {
+      "method": "POST",
+      "route": "/memory/quarantine",
+      "mutating": true,
+      "source": "src/maestro/server/control_api.py",
+      "auth": "OPERATOR (bearer token + RBAC + rate limit, CTRL-L4-03/07)"
     },
     {
       "method": "GET",
@@ -216,6 +307,13 @@
     {
       "method": "POST",
       "route": "/perimeter",
+      "mutating": true,
+      "source": "src/maestro/server/control_api.py",
+      "auth": "OPERATOR (bearer token + RBAC + rate limit, CTRL-L4-03/07)"
+    },
+    {
+      "method": "POST",
+      "route": "/policies/validate",
       "mutating": true,
       "source": "src/maestro/server/control_api.py",
       "auth": "OPERATOR (bearer token + RBAC + rate limit, CTRL-L4-03/07)"
@@ -240,6 +338,34 @@
       "mutating": false,
       "source": "src/maestro/server/control_api.py",
       "auth": "VIEWER (bearer token + RBAC + rate limit, CTRL-L4-03/07)"
+    },
+    {
+      "method": "GET",
+      "route": "/tenants",
+      "mutating": false,
+      "source": "src/maestro/server/control_api.py",
+      "auth": "VIEWER (bearer token + RBAC + rate limit, CTRL-L4-03/07)"
+    },
+    {
+      "method": "POST",
+      "route": "/tenants",
+      "mutating": true,
+      "source": "src/maestro/server/control_api.py",
+      "auth": "OPERATOR (bearer token + RBAC + rate limit, CTRL-L4-03/07)"
+    },
+    {
+      "method": "GET",
+      "route": "/tenants/{tenant_id}",
+      "mutating": false,
+      "source": "src/maestro/server/control_api.py",
+      "auth": "VIEWER (bearer token + RBAC + rate limit, CTRL-L4-03/07)"
+    },
+    {
+      "method": "POST",
+      "route": "/tenants/{tenant_id}/isolate",
+      "mutating": true,
+      "source": "src/maestro/server/control_api.py",
+      "auth": "OPERATOR (bearer token + RBAC + rate limit, CTRL-L4-03/07)"
     }
   ]
 }

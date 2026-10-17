@@ -1,8 +1,8 @@
 {
   "schema_version": "1.0",
   "package_root": "src/maestro",
-  "module_count": 105,
-  "total_lines": 17870,
+  "module_count": 107,
+  "total_lines": 19066,
   "modules": [
     {
       "module": "maestro.__init__",
@@ -64,14 +64,14 @@
       "module": "maestro.cli",
       "path": "src/maestro/cli.py",
       "package": ".",
-      "lines": 395,
+      "lines": 636,
       "role": "MAESTRO CLI \u2014 Full lifecycle management surface (BP11)."
     },
     {
       "module": "maestro.compliance.export",
       "path": "src/maestro/compliance/export.py",
       "package": "compliance",
-      "lines": 336,
+      "lines": 332,
       "role": "Compliance Export Generator (BP12)."
     },
     {
@@ -260,7 +260,7 @@
       "module": "maestro.dr.disaster_recovery",
       "path": "src/maestro/dr/disaster_recovery.py",
       "package": "dr",
-      "lines": 679,
+      "lines": 678,
       "role": "Disaster Recovery for MAESTRO (BP12)."
     },
     {
@@ -365,7 +365,7 @@
       "module": "maestro.memory.postgres_rls",
       "path": "src/maestro/memory/postgres_rls.py",
       "package": "memory",
-      "lines": 388,
+      "lines": 385,
       "role": "PostgreSQL Row-Level Security Migration for Multi-Tenant Isolation (BP12)."
     },
     {
@@ -379,7 +379,7 @@
       "module": "maestro.memory.store",
       "path": "src/maestro/memory/store.py",
       "package": "memory",
-      "lines": 376,
+      "lines": 417,
       "role": "The four-tier memory store \u2014 quarantine, promotion, isolation (Phase 3)."
     },
     {
@@ -456,7 +456,7 @@
       "module": "maestro.scripts.bp0_audit",
       "path": "src/maestro/scripts/bp0_audit.py",
       "package": "scripts",
-      "lines": 459,
+      "lines": 465,
       "role": "BP0 Truth Audit generator:"
     },
     {
@@ -470,21 +470,21 @@
       "module": "maestro.scripts.validate_v1",
       "path": "src/maestro/scripts/validate_v1.py",
       "package": "scripts",
-      "lines": 309,
+      "lines": 308,
       "role": "MAESTRO v1.0 Validation Script \u2014 runs all checks, exits non-zero on failure."
     },
     {
       "module": "maestro.sdk.__init__",
       "path": "src/maestro/sdk/__init__.py",
       "package": "sdk",
-      "lines": 200,
+      "lines": 190,
       "role": "MAESTRO SDK \u2014 Typed client library for the MAESTRO Control Plane."
     },
     {
       "module": "maestro.sdk.client",
       "path": "src/maestro/sdk/client.py",
       "package": "sdk",
-      "lines": 438,
+      "lines": 473,
       "role": "High-level SDK client classes for MAESTRO."
     },
     {
@@ -498,14 +498,14 @@
       "module": "maestro.sdk.http_client",
       "path": "src/maestro/sdk/http_client.py",
       "package": "sdk",
-      "lines": 583,
+      "lines": 627,
       "role": "HTTP client for MAESTRO Control Plane API."
     },
     {
       "module": "maestro.sdk.models",
       "path": "src/maestro/sdk/models.py",
       "package": "sdk",
-      "lines": 261,
+      "lines": 342,
       "role": "Pydantic models for MAESTRO SDK request/response types."
     },
     {
@@ -617,7 +617,7 @@
       "module": "maestro.security.policy_bundle_signed",
       "path": "src/maestro/security/policy_bundle_signed.py",
       "package": "security",
-      "lines": 494,
+      "lines": 489,
       "role": "Signed Policy Bundles for Production Deployment (BP12)."
     },
     {
@@ -649,10 +649,24 @@
       "role": "FastAPI server + WebSocket telemetry (Sec 3.1, 6.1)."
     },
     {
+      "module": "maestro.server.agent_registry",
+      "path": "src/maestro/server/agent_registry.py",
+      "package": "server",
+      "lines": 267,
+      "role": "Per-tenant registry of live agent platforms \u2014 the fleet surface (BP11)."
+    },
+    {
+      "module": "maestro.server.agents_api",
+      "path": "src/maestro/server/agents_api.py",
+      "package": "server",
+      "lines": 203,
+      "role": "Fleet-management REST API:"
+    },
+    {
       "module": "maestro.server.app",
       "path": "src/maestro/server/app.py",
       "package": "server",
-      "lines": 135,
+      "lines": 136,
       "role": "FastAPI + WebSocket backend (Sec 3.1, Sec 6.1 \u300cFastAPI framework\u300d)."
     },
     {
@@ -673,7 +687,7 @@
       "module": "maestro.server.control_api",
       "path": "src/maestro/server/control_api.py",
       "package": "server",
-      "lines": 322,
+      "lines": 623,
       "role": "REST API that drives the *real* control plane behind the web control panel."
     },
     {
