@@ -5,7 +5,10 @@ operator dashboard (Sec 3.1). Provides:
 - ``GET /``             : rendered dashboard HTML
 - ``GET /risk``         : MAESTRO threat-risk matrix JSON (Table 4)
 - ``GET /healthz``      : liveness probe
-- ``WS  {{ ws_path }}`` : telemetry/alert/plan/risk stream (Sec 3.1)
+- ``WS  /ws``           : telemetry/alert/plan/risk stream (Sec 3.1)
+
+The control-plane REST API itself lives in ``control_api`` (``/api/...``);
+this module adds the HTML shells, the dashboard surfaces, and the WebSocket.
 
 Run with:
     uvicorn maestro.server.app:app --port 8000
@@ -24,10 +27,10 @@ from ..config import cfg_get, load_config
 from ..logging_setup import get_logger
 from ..maestro.mapping import threat_risk_matrix
 from ..maestro.threats import load_threats
-from . import connectors_api, control_api
+from . import agents_api, connectors_api, control_api
 from .auth import DEFAULT_CONTROL_PLANE_TENANT, RateLimiter, configure_auth
 from .control_panel import CONTROL_PANEL_HTML
-from .dashboard import DASHBOARD_HTML
+from .dashboards.dashboard import DASHBOARD_HTML
 from .playground import PLAYGROUND_HTML
 
 logger = get_logger("maestro.server", log_file="results/run.log")
@@ -43,10 +46,7 @@ def create_app(cfg: Any = None) -> FastAPI:
 
     # Zero-trust boundary for the whole /api surface (control plane + model
     # testing; CTRL-L4-03). Default-on; setting mitigation.zero_trust_api=false
-    # restores the paper's unauthenticated baseline. The signing key comes from
-    # MAESTRO_SIGNING_KEY at request time. A per-principal token-bucket rate
-    # limiter (CTRL-L4-07) bounds inbound requests; api_rate_limit_per_min<=0
-    # disables it.
+    # restores the paper's unauthenticated baseline.
     configure_auth(
         enforce=bool(cfg_get(cfg, "mitigation.zero_trust_api", True)),
         control_plane_tenant=DEFAULT_CONTROL_PLANE_TENANT,
@@ -59,10 +59,12 @@ def create_app(cfg: Any = None) -> FastAPI:
     app.include_router(connectors_api.router)
     # Control-plane REST API driving the live enforcement stack (blueprint §3).
     app.include_router(control_api.router)
+    # Fleet management: create/drive/stop the tenant's agents (BP11).
+    app.include_router(agents_api.router)
 
     @app.get("/", response_class=HTMLResponse)
     def root() -> str:
-        return DASHBOARD_HTML.replace("{{ ws_path }}", cfg.server.ws_path)
+        return DASHBOARD_HTML
 
     @app.get("/control", response_class=HTMLResponse)
     def control_panel() -> str:
@@ -79,6 +81,11 @@ def create_app(cfg: Any = None) -> FastAPI:
     @app.get("/healthz")
     def healthz() -> JSONResponse:
         return JSONResponse({"status": "ok", "ts": time.time()})
+
+    # --------------------------------------------------------------------------- #
+    # WebSocket endpoint: live telemetry/alert/plan stream for the dashboard
+    # (Sec 3.1 interactive monitoring loop).
+    # --------------------------------------------------------------------------- #
 
     class ConnectionManager:
         def __init__(self) -> None:
@@ -102,19 +109,23 @@ def create_app(cfg: Any = None) -> FastAPI:
 
     mgr = ConnectionManager()
     app.state.mgr = mgr
-    app.state.cfg = cfg
-    app.state.matrix = matrix
 
-    @app.websocket(cfg.server.ws_path)
+    @app.websocket("/ws")
     async def ws_endpoint(ws: WebSocket) -> None:
         await mgr.connect(ws)
         try:
-            await ws.send_text(json.dumps({"kind": "risk", "matrix": matrix}))
+            await ws.send_text(json.dumps({
+                "kind": "state",
+                "tenant": DEFAULT_CONTROL_PLANE_TENANT,
+                "ts": time.time(),
+            }))
+        except Exception:
+            pass
+        try:
             while True:
-                await asyncio.sleep(cfg.server.dashboard_refresh_s)
-                await mgr.broadcast({"kind": "telemetry",
-                                     "ts": time.time(),
-                                     "msg": "heartbeat (Sec 6.2 baseline every 7s)"})
+                await asyncio.sleep(5)
+                await mgr.broadcast({"kind": "telemetry", "ts": time.time(),
+                                    "msg": "heartbeat (Sec 6.2 baseline every 7s)"})
         except WebSocketDisconnect:
             mgr.disconnect(ws)
 

@@ -1,0 +1,891 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>MAESTRO — Agent Control Plane</title>
+<style>
+  :root{
+    --bg:#0b0f17; --panel:#121826; --panel2:#1a2333; --line:#223050;
+    --ink:#dbe4f0; --muted:#7b8ba3; --faint:#4b5a72;
+    --accent:#6366f1; --accent2:#22d3ee; --ok:#22c55e; --warn:#f59e0b; --bad:#ef4444;
+    --radius:10px; --mono:ui-monospace,'Cascadia Code',Consolas,monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{font:14px/1.5 'Segoe UI',system-ui,Tahoma,sans-serif;background:var(--bg);color:var(--ink)}
+  a{color:var(--accent2);text-decoration:none}
+  ::-webkit-scrollbar{width:9px;height:9px}
+  ::-webkit-scrollbar-thumb{background:var(--line);border-radius:6px}
+  ::-webkit-scrollbar-track{background:transparent}
+
+  .app{display:grid;grid-template-columns:232px 1fr;grid-template-rows:56px 1fr;height:100vh;
+       grid-template-areas:"brand top" "side main"}
+  header.top{grid-area:top;display:flex;align-items:center;gap:14px;padding:0 20px;
+    background:var(--panel);border-bottom:1px solid var(--line)}
+  .brand{grid-area:brand;display:flex;align-items:center;gap:10px;padding:0 16px;
+    background:var(--panel);border-bottom:1px solid var(--line);border-right:1px solid var(--line)}
+  .brand .mark{width:26px;height:26px;border-radius:7px;background:linear-gradient(135deg,var(--accent),var(--accent2));
+    display:flex;align-items:center;justify-content:center;font-weight:800;color:#fff;font-size:13px}
+  .brand b{font-size:15px;letter-spacing:.5px}
+  aside.side{grid-area:side;background:var(--panel);border-right:1px solid var(--line);
+    display:flex;flex-direction:column;padding:10px 8px;overflow-y:auto}
+  main{grid-area:main;overflow-y:auto;padding:22px 26px}
+  .chip{display:inline-flex;align-items:center;gap:6px;padding:3px 10px;border-radius:999px;
+    font-size:12px;background:var(--panel2);border:1px solid var(--line);color:var(--muted);white-space:nowrap}
+  .chip b{color:var(--ink);font-weight:600}
+  .dot{width:8px;height:8px;border-radius:50%;background:var(--faint);flex:none}
+  .dot.ok{background:var(--ok);box-shadow:0 0 0 3px rgba(34,197,94,.15);animation:pulse 2s infinite}
+  .dot.bad{background:var(--bad)}
+  @keyframes pulse{50%{box-shadow:0 0 0 6px rgba(34,197,94,0)}}
+  .spacer{flex:1}
+
+  .nav-item{display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:8px;cursor:pointer;
+    color:var(--muted);font-size:13.5px;margin-bottom:2px;border:1px solid transparent;user-select:none}
+  .nav-item:hover{background:var(--panel2);color:var(--ink)}
+  .nav-item.active{background:var(--panel2);color:var(--ink);border-color:var(--line)}
+  .nav-item.active .ico{color:var(--accent2)}
+  .nav-item .ico{width:18px;text-align:center;font-size:14px}
+  .nav-item .cnt{margin-left:auto;font-size:11px;background:var(--bg);border:1px solid var(--line);
+    border-radius:999px;padding:0 7px;color:var(--muted)}
+  .side-links{margin-top:auto;padding-top:12px;border-top:1px solid var(--line);display:flex;flex-direction:column;gap:6px}
+  .side-links a{font-size:12px;color:var(--muted);padding:4px 12px}
+  .side-links a:hover{color:var(--accent2)}
+
+  .grid{display:grid;gap:14px;margin-bottom:16px}
+  .g4{grid-template-columns:repeat(auto-fit,minmax(200px,1fr))}
+  .g2{grid-template-columns:repeat(auto-fit,minmax(340px,1fr))}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:16px 18px}
+  .card h3{font-size:12px;font-weight:600;letter-spacing:.8px;text-transform:uppercase;color:var(--muted);
+    margin-bottom:12px;display:flex;align-items:center;gap:8px}
+  .card h3 .right{margin-left:auto;display:flex;gap:6px;letter-spacing:0;text-transform:none}
+  .metric{font-size:26px;font-weight:700;margin:2px 0}
+  .sub{color:var(--muted);font-size:12px}
+
+  .tbl{width:100%;border-collapse:collapse;font-size:13px}
+  .tbl th{color:var(--faint);font-weight:600;text-align:left;padding:7px 10px;border-bottom:1px solid var(--line);
+    font-size:11px;text-transform:uppercase;letter-spacing:.6px;white-space:nowrap}
+  .tbl td{padding:8px 10px;border-bottom:1px solid rgba(34,48,80,.5);vertical-align:middle}
+  .tbl tbody tr{transition:background .12s}
+  .tbl tbody tr:hover{background:rgba(99,102,241,.06)}
+  .tbl tbody tr.clickable{cursor:pointer}
+  .mono{font-family:var(--mono);font-size:12px}
+  .truncate{max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:inline-block;vertical-align:middle}
+
+  .badge{display:inline-flex;align-items:center;gap:5px;padding:2px 9px;border-radius:999px;
+    font-size:11px;font-weight:600;white-space:nowrap}
+  .b-ok{background:rgba(34,197,94,.13);color:#4ade80}
+  .b-warn{background:rgba(245,158,11,.13);color:#fbbf24}
+  .b-bad{background:rgba(239,68,68,.13);color:#f87171}
+  .b-info{background:rgba(56,189,248,.13);color:#38bdf8}
+  .b-mut{background:rgba(123,139,163,.13);color:var(--muted)}
+  .b-purple{background:rgba(167,139,250,.13);color:#a78bfa}
+  .st-verified{background:rgba(34,197,94,.13);color:#4ade80}
+  .st-tested{background:rgba(56,189,248,.13);color:#38bdf8}
+  .st-enforced{background:rgba(245,158,11,.13);color:#fbbf24}
+  .st-implemented{background:rgba(167,139,250,.13);color:#a78bfa}
+  .st-declared{background:rgba(123,139,163,.13);color:var(--muted)}
+
+  button,.btn{background:var(--accent);color:#fff;border:0;padding:7px 14px;border-radius:8px;
+    font-weight:600;font-size:13px;cursor:pointer;font-family:inherit;transition:filter .15s}
+  button:hover,.btn:hover{filter:brightness(1.12)}
+  button:disabled{opacity:.5;cursor:not-allowed}
+  button.ghost{background:var(--panel2);color:var(--ink);border:1px solid var(--line)}
+  button.danger{background:rgba(239,68,68,.14);color:#f87171;border:1px solid rgba(239,68,68,.35)}
+  button.ok-btn{background:rgba(34,197,94,.15);color:#4ade80;border:1px solid rgba(34,197,94,.4)}
+  button.sm{padding:4px 10px;font-size:12px}
+  label{display:block;font-size:12px;color:var(--muted);margin:0 0 5px}
+  input,select,textarea{width:100%;background:var(--bg);border:1px solid var(--line);border-radius:8px;
+    padding:8px 11px;color:var(--ink);font-size:13px;font-family:inherit}
+  textarea{font-family:var(--mono);font-size:12.5px;resize:vertical}
+  input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent)}
+  .field{margin-bottom:13px}
+
+  section{display:none}
+  section.active{display:block}
+  .pagehead{display:flex;align-items:center;gap:12px;margin-bottom:18px}
+  .pagehead h2{font-size:19px;font-weight:700}
+
+  .drawer{position:fixed;top:0;right:-520px;width:500px;max-width:94vw;height:100vh;background:var(--panel);
+    border-left:1px solid var(--line);z-index:60;transition:right .25s ease;display:flex;flex-direction:column;
+    box-shadow:-18px 0 40px rgba(0,0,0,.45)}
+  .drawer.open{right:0}
+  .drawer-head{display:flex;align-items:center;gap:10px;padding:14px 18px;border-bottom:1px solid var(--line)}
+  .drawer-head b{font-family:var(--mono);font-size:13.5px}
+  .drawer-body{flex:1;overflow-y:auto;padding:16px 18px;display:flex;flex-direction:column;gap:14px}
+  .kv{display:grid;grid-template-columns:130px 1fr;gap:6px 12px;font-size:13px}
+  .kv dt{color:var(--faint)}
+  .kv dd{color:var(--ink);word-break:break-word}
+  .pillrow{display:flex;flex-wrap:wrap;gap:5px}
+
+  .overlay{position:fixed;inset:0;background:rgba(4,7,12,.72);z-index:80;display:none;
+    align-items:center;justify-content:center;backdrop-filter:blur(2px)}
+  .overlay.open{display:flex}
+  .modal{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:22px 24px;
+    width:92%;max-width:480px;max-height:88vh;overflow-y:auto}
+  .modal h3{font-size:15px;margin-bottom:14px}
+  .modal .actions{display:flex;gap:8px;justify-content:flex-end;margin-top:18px}
+
+  #toasts{position:fixed;bottom:18px;right:18px;z-index:100;display:flex;flex-direction:column;gap:8px}
+  .toast{background:var(--panel2);border:1px solid var(--line);border-left:3px solid var(--accent);
+    border-radius:9px;padding:10px 14px;font-size:13px;min-width:260px;max-width:380px;
+    box-shadow:0 8px 24px rgba(0,0,0,.4);animation:slidein .2s ease}
+  .toast.ok{border-left-color:var(--ok)} .toast.bad{border-left-color:var(--bad)} .toast.warn{border-left-color:var(--warn)}
+  @keyframes slidein{from{transform:translateX(24px);opacity:0}}
+
+  .decision{border:1px solid var(--line);border-radius:9px;overflow:hidden;margin-top:10px}
+  .decision .dhead{display:flex;align-items:center;gap:8px;padding:9px 13px;background:var(--panel2);
+    font-weight:600;font-size:13px}
+  .decision pre{padding:12px 14px;font-family:var(--mono);font-size:12px;color:#9fb3d1;
+    overflow-x:auto;max-height:340px;background:var(--bg)}
+  pre.json{font-family:var(--mono);font-size:12px;color:#9fb3d1;overflow-x:auto;
+    background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:12px;max-height:300px;overflow-y:auto}
+  .riskbar{height:6px;border-radius:4px;background:var(--line);overflow:hidden;margin-top:6px}
+  .riskbar i{display:block;height:100%;border-radius:4px}
+  .empty{color:var(--faint);font-size:13px;padding:14px;text-align:center;font-style:italic}
+  .legend{display:flex;flex-wrap:wrap;gap:8px}
+  details.raw{margin-top:8px}
+  details.raw summary{cursor:pointer;color:var(--faint);font-size:12px}
+  @media(max-width:860px){.app{grid-template-columns:64px 1fr}.brand b,.nav-item span.txt,.side-links{display:none}
+    .nav-item{justify-content:center}.nav-item .cnt{display:none}}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="brand"><div class="mark">M</div><b>MAESTRO</b></div>
+
+  <header class="top">
+    <span class="chip"><span class="dot" id="conn-dot"></span><span id="conn-label">connecting</span></span>
+    <span class="chip">Tenant <b id="h-tenant">--</b></span>
+    <span class="chip">Mode <b id="h-mode">--</b></span>
+    <span class="chip">Ledger <b id="h-ledger">--</b></span>
+    <span class="chip" id="h-halted-chip" style="display:none"><span class="dot bad"></span><b style="color:#f87171">HALTED</b></span>
+    <div class="spacer"></div>
+    <button class="ghost sm" id="btn-token" title="Set API bearer token">&#128273; Token</button>
+  </header>
+
+  <aside class="side">
+    <div class="nav-item active" data-sec="overview"><span class="ico">&#9672;</span><span class="txt">Overview</span></div>
+    <div class="nav-item" data-sec="agents"><span class="ico">&#11041;</span><span class="txt">Agents</span><span class="cnt" id="nav-agents" style="display:none">0</span></div>
+    <div class="nav-item" data-sec="memory"><span class="ico">&#9636;</span><span class="txt">Memory</span><span class="cnt" id="nav-mem" style="display:none">0</span></div>
+    <div class="nav-item" data-sec="ledger"><span class="ico">&#9913;</span><span class="txt">Ledger</span></div>
+    <div class="nav-item" data-sec="controls"><span class="ico">&#10003;</span><span class="txt">Controls</span></div>
+    <div class="nav-item" data-sec="policies"><span class="ico">&#167;</span><span class="txt">Policies</span></div>
+    <div class="nav-item" data-sec="tenants"><span class="ico">&#9638;</span><span class="txt">Tenants</span></div>
+    <div class="nav-item" data-sec="metrics"><span class="ico">&#8767;</span><span class="txt">Metrics</span></div>
+    <div class="side-links">
+      <a href="/control">&rarr; Control Panel</a>
+      <a href="/playground">&rarr; Model Playground</a>
+      <a href="/docs" target="_blank">&rarr; API Docs</a>
+    </div>
+  </aside>
+
+  <main>
+    <!-- ================= OVERVIEW ================= -->
+    <section id="sec-overview" class="active">
+      <div class="pagehead"><h2>Overview</h2><span class="sub" id="ov-scope"></span></div>
+      <div class="grid g4" id="ov-cards"></div>
+      <div class="grid g2">
+        <div class="card">
+          <h3>Blast radius — the default plane's bounded reach</h3>
+          <div id="ov-blast"><div class="empty">loading…</div></div>
+        </div>
+        <div class="card">
+          <h3>Threat–risk matrix <span class="sub">(Table 4)</span></h3>
+          <div style="overflow-x:auto"><table class="tbl" id="ov-risk"></table></div>
+        </div>
+      </div>
+      <div class="grid g2">
+        <div class="card">
+          <h3>Injection perimeter test <span class="sub">— dual-LLM boundary</span></h3>
+          <div class="field"><textarea id="pm-input" rows="3" placeholder="Paste untrusted external content — e.g. IGNORE PREVIOUS INSTRUCTIONS…"></textarea></div>
+          <button onclick="testPerimeter()">Scan content</button>
+          <div id="pm-out"></div>
+        </div>
+        <div class="card">
+          <h3>Critique gate <span class="sub">— HMDC pipeline</span></h3>
+          <div class="field"><textarea id="cr-input" rows="3" placeholder="Candidate output text to critique…"></textarea></div>
+          <button onclick="runCritique()">Run critique</button>
+          <div id="cr-out"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= AGENTS ================= -->
+    <section id="sec-agents">
+      <div class="pagehead">
+        <h2>Agent fleet</h2><span class="sub">live platforms — every action capability-gated &amp; ledgered</span>
+        <div class="spacer"></div>
+        <button onclick="openCreateAgent()">＋ Create agent</button>
+      </div>
+      <div class="card">
+        <div style="overflow-x:auto"><table class="tbl" id="agents-tbl">
+          <thead><tr><th>Agent</th><th>Type</th><th>Status</th><th>Mode</th><th>Capabilities</th><th>Ledger</th><th>Memory</th><th></th></tr></thead>
+          <tbody><tr><td colspan="8" class="empty">loading…</td></tr></tbody>
+        </table></div>
+      </div>
+    </section>
+
+    <!-- ================= MEMORY ================= -->
+    <section id="sec-memory">
+      <div class="pagehead"><h2>Memory</h2><span class="sub" id="mem-scope"></span></div>
+      <div class="card">
+        <h3>Records
+          <span class="right">
+            <select id="mem-tier" style="width:auto" onchange="loadMemory()">
+              <option value="">all tiers</option><option value="working">working</option>
+              <option value="episodic">episodic</option><option value="semantic">semantic</option>
+              <option value="procedural">procedural</option>
+            </select>
+            <select id="mem-trust" style="width:auto" onchange="loadMemory()">
+              <option value="">all trust</option><option value="untrusted">quarantined</option>
+              <option value="trusted">trusted</option><option value="curated">curated</option>
+            </select>
+          </span>
+        </h3>
+        <div style="overflow-x:auto"><table class="tbl" id="mem-tbl">
+          <thead><tr><th>Record</th><th>Tier</th><th>Trust</th><th>Content</th><th>Created</th><th></th></tr></thead>
+          <tbody><tr><td colspan="6" class="empty">loading…</td></tr></tbody>
+        </table></div>
+      </div>
+    </section>
+
+    <!-- ================= LEDGER ================= -->
+    <section id="sec-ledger">
+      <div class="pagehead">
+        <h2>Audit ledger</h2><span class="sub">tamper-evident hash chain + HMAC</span>
+        <div class="spacer"></div>
+        <button class="ghost" onclick="verifyLedger()">Verify chain</button>
+        <button class="ghost" onclick="exportLedger()">Export JSON</button>
+      </div>
+      <div class="grid g4" id="ledger-cards"></div>
+      <div class="card">
+        <h3>Events <span class="sub" style="font-weight:400">— newest first</span>
+          <span class="right"><label style="margin:0">show last <input id="ledger-limit" type="number" value="50" min="1" max="1000" style="width:70px;display:inline-block" onchange="loadLedger()"></label></span>
+        </h3>
+        <div style="overflow-x:auto"><table class="tbl" id="ledger-tbl">
+          <thead><tr><th>#</th><th>Time</th><th>Type</th><th>Actor</th><th>Decision</th><th>Detail</th><th>Hash</th></tr></thead>
+          <tbody><tr><td colspan="7" class="empty">loading…</td></tr></tbody>
+        </table></div>
+      </div>
+    </section>
+
+    <!-- ================= CONTROLS ================= -->
+    <section id="sec-controls">
+      <div class="pagehead"><h2>Controls — truth audit</h2><span class="sub">declared → verified ladder, no aspirational entries</span></div>
+      <div class="grid g4" id="cov-cards"></div>
+      <div class="card">
+        <h3>Legend</h3>
+        <div class="legend">
+          <span class="badge st-verified">verified</span><span class="badge st-tested">tested</span>
+          <span class="badge st-enforced">enforced</span><span class="badge st-implemented">implemented</span>
+          <span class="badge st-declared">declared</span>
+        </div>
+      </div>
+      <div class="card">
+        <h3>Inventory</h3>
+        <div style="overflow-x:auto"><table class="tbl" id="controls-tbl">
+          <thead><tr><th>ID</th><th>Name</th><th>Layer</th><th>Status</th><th>Default</th><th>Implementation</th></tr></thead>
+          <tbody><tr><td colspan="6" class="empty">loading…</td></tr></tbody>
+        </table></div>
+      </div>
+    </section>
+
+    <!-- ================= POLICIES ================= -->
+    <section id="sec-policies">
+      <div class="pagehead"><h2>Policies</h2><span class="sub">validate a bundle against the executor contract</span></div>
+      <div class="grid g2">
+        <div class="card">
+          <h3>Policy bundle (YAML)</h3>
+          <div class="field"><textarea id="pol-yaml" rows="14" spellcheck="false">version: 2
+allowed_intents:
+  - code_read
+  - code_test
+  - code_lint
+  - code_open_pr
+limits:
+  max_tool_calls: 500
+  max_calls_per_window: 60
+</textarea></div>
+          <button onclick="validatePolicy()">Validate bundle</button>
+        </div>
+        <div class="card">
+          <h3>Validation result</h3>
+          <div id="pol-out"><div class="empty">validate a bundle to see the result</div></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= TENANTS ================= -->
+    <section id="sec-tenants">
+      <div class="pagehead">
+        <h2>Tenants</h2><span class="sub">control-plane partitions (admin)</span>
+        <div class="spacer"></div>
+        <button onclick="openCreateTenant()">＋ Create tenant</button>
+      </div>
+      <div class="card">
+        <div style="overflow-x:auto"><table class="tbl" id="tenants-tbl">
+          <thead><tr><th>Tenant</th><th>Display name</th><th>Agents</th><th>Ledger events</th><th>Created</th><th>State</th><th></th></tr></thead>
+          <tbody><tr><td colspan="7" class="empty">loading…</td></tr></tbody>
+        </table></div>
+      </div>
+    </section>
+
+    <!-- ================= METRICS ================= -->
+    <section id="sec-metrics">
+      <div class="pagehead"><h2>Metrics</h2><span class="sub">derived from the ledger — not self-reported counters</span></div>
+      <div class="grid g4" id="met-cards"></div>
+      <div class="grid g2">
+        <div class="card"><h3>Denials by stage</h3><div id="met-denials"></div></div>
+        <div class="card"><h3>Decision distribution</h3><div id="met-decisions"></div></div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<!-- agent drawer -->
+<div class="drawer" id="drawer">
+  <div class="drawer-head">
+    <b id="dr-id">agent</b><span class="badge" id="dr-status">--</span>
+    <div class="spacer"></div>
+    <button class="ghost sm" onclick="closeDrawer()">&#10005; Close</button>
+  </div>
+  <div class="drawer-body" id="dr-body"></div>
+</div>
+
+<!-- modal -->
+<div class="overlay" id="overlay" onclick="if(event.target===this)closeModal()">
+  <div class="modal" id="modal"></div>
+</div>
+<div id="toasts"></div>
+
+<script>
+'use strict';
+/* ============================= helpers ============================= */
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/[&<>"']/g,
+  c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const fmtTime = ts => ts ? new Date(ts * 1000).toLocaleTimeString() : '--';
+const fmtDur = ts => !ts ? 'never' : Math.round((Date.now()/1000 - ts)) + 's ago';
+
+function toast(msg, kind='') {
+  const t = document.createElement('div');
+  t.className = 'toast ' + kind; t.textContent = msg;
+  $('toasts').appendChild(t);
+  setTimeout(() => t.remove(), 4200);
+}
+
+function authHeaders(extra={}) {
+  const h = {'Content-Type':'application/json', ...extra};
+  const tok = localStorage.getItem('maestro_token');
+  if (tok) h['Authorization'] = 'Bearer ' + tok;
+  return h;
+}
+
+let tokenModalOpen = false;
+async function api(path, opts={}) {
+  const init = {method: opts.method || 'GET', headers: authHeaders()};
+  if (opts.body !== undefined) init.body = JSON.stringify(opts.body);
+  const r = await fetch('/api' + path, init);
+  if (r.status === 401 && !tokenModalOpen) { openTokenModal(); throw new Error('unauthorized'); }
+  let d = null; try { d = await r.json(); } catch { /* non-json */ }
+  if (!r.ok) {
+    const detail = d && (d.detail && (typeof d.detail === 'string' ? d.detail : JSON.stringify(d.detail)) || d.message) || ('HTTP ' + r.status);
+    if (r.status === 403) toast('Forbidden: ' + detail, 'bad');
+    else if (r.status === 429) toast('Rate limited — slow down', 'warn');
+    else toast('Error: ' + detail, 'bad');
+    throw new Error(detail);
+  }
+  return d;
+}
+
+function statusBadge(s) {
+  const map = {running:'b-ok', idle:'b-mut', halted:'b-bad', error:'b-bad'};
+  const icon = {running:'&#9654;', idle:'&#8741;', halted:'&#9632;', error:'!'}[s] || '·';
+  return `<span class="badge ${map[s]||'b-mut'}">${icon} ${esc(s)}</span>`;
+}
+function trustBadge(t) {
+  const map = {untrusted:'b-bad', trusted:'b-ok', curated:'b-info', system:'b-purple'};
+  const lbl = {untrusted:'quarantined', trusted:'trusted', curated:'curated', system:'system'}[t] || t;
+  return `<span class="badge ${map[t]||'b-mut'}">${esc(lbl)}</span>`;
+}
+function riskBar(v) {
+  const pct = Math.max(0, Math.min(100, Math.round((v ?? 0) * 100)));
+  const col = pct > 66 ? 'var(--bad)' : pct > 33 ? 'var(--warn)' : 'var(--ok)';
+  return `<div class="riskbar"><i style="width:${pct}%;background:${col}"></i></div>`;
+}
+function decisionCard(d) {
+  if (!d) return '';
+  const ok = d.allowed !== false && d.decision !== 'deny';
+  return `<div class="decision">
+    <div class="dhead"><span class="badge ${ok?'b-ok':'b-bad'}">${esc(d.decision || (ok?'allowed':'denied'))}</span>
+      <span class="mono" style="color:var(--muted)">${esc(d.proposed_action || '')}</span></div>
+    <pre>${esc(JSON.stringify(d.decision_card ?? d, null, 2))}</pre></div>`;
+}
+
+/* ============================= modal ============================= */
+function openModal(html) { $('modal').innerHTML = html; $('overlay').classList.add('open'); }
+function closeModal() { $('overlay').classList.remove('open'); }
+
+function openTokenModal() {
+  tokenModalOpen = true;
+  const cur = localStorage.getItem('maestro_token') || '';
+  openModal(`<h3>&#128273; API bearer token</h3>
+    <p class="sub" style="margin-bottom:12px">The control plane is zero-trust by default. Paste a token issued
+    for this plane (role &ge; viewer; actions need operator/admin). It is stored in this browser only.</p>
+    <div class="field"><textarea id="tok-input" rows="3" placeholder="paste bearer token…">${esc(cur)}</textarea></div>
+    <div class="actions"><button class="ghost" onclick="tokenModalOpen=false;closeModal()">Cancel</button>
+    <button onclick="saveToken()">Save</button></div>`);
+}
+function saveToken() {
+  const v = $('tok-input').value.trim();
+  if (v) localStorage.setItem('maestro_token', v); else localStorage.removeItem('maestro_token');
+  tokenModalOpen = false; closeModal();
+  toast(v ? 'Token saved' : 'Token cleared', 'ok');
+  refreshHeader(); loadSection(activeSec);
+}
+$('btn-token').onclick = openTokenModal;
+
+/* ============================= navigation ============================= */
+let activeSec = 'overview';
+document.querySelectorAll('.nav-item').forEach(item => item.addEventListener('click', () => {
+  document.querySelectorAll('.nav-item').forEach(i => i.classList.remove('active'));
+  item.classList.add('active');
+  document.querySelectorAll('main section').forEach(s => s.classList.remove('active'));
+  activeSec = item.dataset.sec;
+  $('sec-' + activeSec).classList.add('active');
+  loadSection(activeSec);
+}));
+const SECTION_LOADERS = {overview: loadOverview, agents: loadAgents, memory: loadMemory, ledger: loadLedger,
+  controls: loadControls, policies: () => {}, tenants: loadTenants, metrics: loadMetrics};
+function loadSection(sec) { (SECTION_LOADERS[sec] || (() => {}))(); }
+
+/* ============================= header / ws ============================= */
+async function refreshHeader() {
+  try {
+    const s = await api('/state');
+    $('h-tenant').textContent = s.tenant;
+    $('h-mode').textContent = s.shadow ? 'shadow' : 'online';
+    $('h-ledger').textContent = s.ledger_events + (s.ledger_intact ? ' ✓' : ' ⚠');
+    $('h-halted-chip').style.display = s.halted ? '' : 'none';
+    setConn(true);
+  } catch { setConn(false); }
+}
+function setConn(ok, label) {
+  $('conn-dot').className = 'dot ' + (ok ? 'ok' : 'bad');
+  $('conn-label').textContent = label || (ok ? 'live' : 'no access');
+}
+let ws = null;
+function connectWS() {
+  try {
+    ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws');
+    ws.onmessage = e => { try { const d = JSON.parse(e.data); if (d.kind) setConn(true, 'ws ✓'); } catch {} };
+    ws.onclose = () => setTimeout(connectWS, 4000);
+    ws.onerror = () => ws && ws.close();
+  } catch { /* ws optional */ }
+}
+
+/* ============================= overview ============================= */
+async function loadOverview() {
+  try {
+    const [state, blast, fleet] = await Promise.all([api('/state'), api('/blast-radius'), api('/agents')]);
+    const irre = (blast.irreversible_intents || []).length;
+    $('ov-scope').textContent = 'scope: ' + state.tenant;
+    $('ov-cards').innerHTML = `
+      <div class="card"><h3>Mode</h3><div class="metric">${state.shadow ? 'shadow' : 'online'}</div>
+        <div class="sub">${state.halted ? '⚠ kill switch tripped' : 'enforcement active'}</div></div>
+      <div class="card"><h3>Ledger events</h3><div class="metric">${state.ledger_events}</div>
+        <div class="sub">chain ${state.ledger_intact ? '<span style="color:var(--ok)">intact ✓</span>' : '<span style="color:var(--bad)">BROKEN</span>'}</div></div>
+      <div class="card"><h3>Agents (fleet)</h3><div class="metric">${fleet.total}</div>
+        <div class="sub">${fleet.agents.filter(a=>a.status==='running').length} running · ${fleet.agents.filter(a=>a.status==='halted').length} halted</div></div>
+      <div class="card"><h3>Irreversible intents</h3><div class="metric" style="color:${irre?'var(--warn)':'var(--ok)'}">${irre}</div>
+        <div class="sub">${blast.holds_irreversible_capability ? '⚠ holds irreversible capability' : 'reversible-only reach'}</div></div>`;
+    $('ov-blast').innerHTML = `
+      <dl class="kv">
+        <dt>agent</dt><dd class="mono">${esc(blast.agent_id)}</dd>
+        <dt>capabilities</dt><dd><div class="pillrow">${(blast.capabilities||[]).map(c=>`<span class="badge b-info">${esc(c)}</span>`).join('') || '<span class="sub">none</span>'}</div></dd>
+        <dt>reversible</dt><dd><div class="pillrow">${(blast.reversible_intents||[]).map(c=>`<span class="badge b-ok">${esc(c)}</span>`).join('') || '<span class="sub">none</span>'}</div></dd>
+        <dt>irreversible</dt><dd><div class="pillrow">${(blast.irreversible_intents||[]).map(c=>`<span class="badge b-warn">${esc(c)}</span>`).join('') || '<span class="sub">none</span>'}</div></dd>
+        <dt>budget</dt><dd class="mono sub">${Object.entries(blast.budget||{}).map(([k,v])=>`${esc(k)}=${esc(v)}`).join('  ')}</dd>
+      </dl>`;
+    $('nav-agents').style.display = fleet.total ? '' : 'none'; $('nav-agents').textContent = fleet.total;
+  } catch {}
+  api('/layers').then(d => {
+    const rows = (d.matrix || []).map(r => `<tr>
+      <td>${esc(r['Threat'])}</td><td class="sub">${esc(r['Primary Layer (MAESTRO)'])}</td>
+      <td class="sub truncate" style="max-width:180px">${esc(r['Cross-layer Impact'])}</td>
+      <td><b>${esc(r['Risk Score'])}</b></td></tr>`).join('');
+    $('ov-risk').innerHTML = `<thead><tr><th>Threat</th><th>Primary layer</th><th>Cross-layer</th><th>Risk</th></tr></thead><tbody>${rows}</tbody>`;
+  }).catch(() => {});
+}
+
+async function testPerimeter() {
+  const content = $('pm-input').value.trim();
+  if (!content) return toast('Enter content to scan', 'warn');
+  try {
+    const d = await api('/perimeter', {method:'POST', body:{content, source:'operator:dashboard'}});
+    const quarantined = d.disposition === 'quarantine';
+    $('pm-out').innerHTML = `<div class="decision">
+      <div class="dhead"><span class="badge ${quarantined?'b-bad':'b-ok'}">${esc(d.disposition)}</span>
+        <span class="sub">injection score ${esc(d.injection_score)} · trust ${esc(d.trust)} · influential ${esc(d.influential)}</span></div>
+      <pre>${esc(d.reason || '')}
+signals: ${(d.signals||[]).map(s=>`${s.category}(${s.severity})`).join(', ') || 'none'}</pre></div>`;
+  } catch {}
+}
+async function runCritique() {
+  const text = $('cr-input').value.trim();
+  if (!text) return toast('Enter text to critique', 'warn');
+  try {
+    const d = await api('/critique', {method:'POST', body:{text, grounding:[]}});
+    const pass = d.verdict === 'pass';
+    $('cr-out').innerHTML = `<div class="decision">
+      <div class="dhead"><span class="badge ${pass?'b-ok':'b-bad'}">${esc(d.verdict)}</span>
+        <span class="sub">alignment ${esc(d.semantic_alignment)} · ensemble ${esc(d.ensemble_mean)} (var ${esc(d.ensemble_variance)})</span></div>
+      <pre>${esc(d.reason || '')}
+${(d.judge_scores||[]).map(j=>`judge ${j.judge_family}: overall=${j.overall}${j.task_verified!==null&&j.task_verified!==undefined?' task✓':''}`).join('\n')||''}</pre></div>`;
+  } catch {}
+}
+
+/* ============================= agents ============================= */
+let currentAgent = null, drawerTimer = null;
+async function loadAgents() {
+  try {
+    const d = await api('/agents');
+    $('nav-agents').style.display = d.total ? '' : 'none'; $('nav-agents').textContent = d.total;
+    const rows = d.agents.map(a => `<tr class="clickable" onclick="openAgent('${esc(a.agent_id)}')">
+      <td class="mono">${esc(a.agent_id)}</td>
+      <td><span class="badge b-purple">${esc(a.type)}</span></td>
+      <td>${statusBadge(a.status)}</td>
+      <td class="sub">${a.shadow_mode ? 'shadow' : 'live'}</td>
+      <td class="sub">${(a.capabilities||[]).length} caps</td>
+      <td class="sub">${a.ledger_events}</td>
+      <td class="sub">${Object.values(a.memory_tiers||{}).reduce((x,y)=>x+y,0)} recs</td>
+      <td><button class="ghost sm" onclick="event.stopPropagation();openAgent('${esc(a.agent_id)}')">manage</button></td>
+    </tr>`).join('');
+    $('agents-tbl').querySelector('tbody').innerHTML = rows ||
+      `<tr><td colspan="8" class="empty">no agents provisioned — create one to start the fleet</td></tr>`;
+  } catch {}
+}
+function openCreateAgent() {
+  openModal(`<h3>＋ Create agent</h3>
+    <div class="field"><label>Type</label>
+      <select id="na-type">
+        <option value="generic">generic — plain platform, custom intents</option>
+        <option value="coding">coding — PR-only secure coding agent</option>
+        <option value="research">research — cited reports, quarantined sources</option>
+        <option value="soc">soc — network monitoring mitigations</option>
+      </select></div>
+    <div class="field"><label>Agent id <span class="sub">(optional, unique in tenant)</span></label>
+      <input id="na-id" placeholder="auto-generated if blank"></div>
+    <div class="field"><label>Allowed intents <span class="sub">(optional; can only narrow the type's vocabulary)</span></label>
+      <input id="na-intents" placeholder="e.g. code_read, code_test, code_lint"></div>
+    <div class="field"><label style="display:flex;gap:8px;align-items:center">
+      <input type="checkbox" id="na-shadow" style="width:auto"> provision in shadow mode (side effects withheld)</label></div>
+    <div class="actions"><button class="ghost" onclick="closeModal()">Cancel</button>
+    <button onclick="createAgent()">Create</button></div>`);
+}
+async function createAgent() {
+  const body = {type: $('na-type').value};
+  if ($('na-id').value.trim()) body.agent_id = $('na-id').value.trim();
+  const intents = $('na-intents').value.trim();
+  if (intents) body.allowed_intents = intents.split(',').map(s => s.trim()).filter(Boolean);
+  if ($('na-shadow').checked) body.shadow = true;
+  try {
+    const a = await api('/agents', {method:'POST', body});
+    closeModal(); toast(`Agent ${a.agent_id} provisioned`, 'ok');
+    loadAgents(); openAgent(a.agent_id);
+  } catch {}
+}
+async function openAgent(id) {
+  currentAgent = id;
+  $('drawer').classList.add('open');
+  $('dr-id').textContent = id;
+  await refreshDrawer();
+  clearInterval(drawerTimer);
+  drawerTimer = setInterval(() => { if (currentAgent && $('drawer').classList.contains('open')) refreshDrawer(); }, 5000);
+}
+function closeDrawer() { currentAgent = null; clearInterval(drawerTimer); $('drawer').classList.remove('open'); }
+async function refreshDrawer() {
+  if (!currentAgent) return;
+  try {
+    const a = await api('/agents/' + encodeURIComponent(currentAgent));
+    const stCls = {running:'b-ok', idle:'b-mut', halted:'b-bad', error:'b-bad'}[a.status] || 'b-mut';
+    $('dr-status').className = 'badge ' + stCls;
+    $('dr-status').textContent = a.status;
+    const halted = a.status === 'halted';
+    $('dr-body').innerHTML = `
+      <div class="card"><h3>State</h3><dl class="kv">
+        <dt>type</dt><dd><span class="badge b-purple">${esc(a.type)}</span></dd>
+        <dt>mode</dt><dd>${a.shadow_mode ? 'shadow (withheld)' : 'live'}</dd>
+        <dt>ledger</dt><dd>${a.ledger_events} events · ${a.ledger_intact ? 'chain intact ✓' : 'BROKEN ⚠'}</dd>
+        <dt>memory</dt><dd>${Object.entries(a.memory_tiers||{}).filter(([,v])=>v>0).map(([k,v])=>`${k}:${v}`).join('  ') || 'empty'}</dd>
+        <dt>created</dt><dd class="sub">${fmtTime(a.created_at)} · active ${fmtDur(a.last_active)}</dd>
+        ${a.error ? `<dt>error</dt><dd style="color:var(--bad)">${esc(a.error)}</dd>` : ''}
+        ${a.policy_digest ? `<dt>policy</dt><dd class="mono sub">${esc(a.policy_digest).slice(0,34)}…</dd>` : ''}
+      </dl></div>
+      <div class="card"><h3>Blast radius</h3>
+        ${(a.blast_radius.irreversible_intents||[]).length ? '<div class="sub" style="color:var(--warn);margin-bottom:6px">⚠ holds irreversible capabilities</div>' : ''}
+        <div class="sub" style="margin-bottom:4px">capabilities</div>
+        <div class="pillrow">${(a.blast_radius.capabilities||[]).map(c=>`<span class="badge b-info">${esc(c)}</span>`).join('')||'<span class="sub">none</span>'}</div>
+        <div class="sub" style="margin:8px 0 4px">irreversible intents</div>
+        <div class="pillrow">${(a.blast_radius.irreversible_intents||[]).map(c=>`<span class="badge b-warn">${esc(c)}</span>`).join('')||'<span class="sub">none</span>'}</div>
+      </div>
+      <div class="card"><h3>Submit alert <span class="sub">— runs the live loop</span></h3>
+        <div class="field"><label>Class</label><select id="dr-cls">
+          <option value="dos">dos</option><option value="anomaly">anomaly</option>
+          <option value="port_scan">port_scan</option><option value="bruteforce">bruteforce</option>
+          <option value="normal">normal</option></select></div>
+        <div class="field"><label>Severity <span class="sub" id="dr-sev-lbl">0.9</span></label>
+          <input type="range" min="0" max="1" step="0.05" value="0.9" id="dr-sev" oninput="$('dr-sev-lbl').textContent=this.value"></div>
+        <div class="field"><label>Detail</label><input id="dr-detail" placeholder="optional context"></div>
+        <button onclick="agentAlert()">Run through agent</button>
+        <div id="dr-alert-out"></div>
+      </div>
+      <div class="card"><h3>Controls</h3>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          ${halted
+            ? '<button class="ok-btn" onclick="agentResume()">&#9654; Resume</button>'
+            : '<button class="danger" onclick="confirmAgentHalt()">&#9632; Halt (kill switch)</button>'}
+          <button class="danger" onclick="confirmAgentDelete()">Delete agent</button>
+        </div></div>
+      <div class="card"><h3>Audit log <span class="sub">— the agent's ledger</span></h3>
+        <div id="dr-logs"><div class="empty">loading…</div></div></div>`;
+    api('/agents/' + encodeURIComponent(currentAgent) + '/logs?limit=30').then(d => {
+      const el = $('dr-logs'); if (!el) return;
+      el.innerHTML = d.logs.length ? d.logs.map(e => `<div style="padding:6px 0;border-bottom:1px solid rgba(34,48,80,.5)">
+          <span class="badge ${e.decision==='allow_with_safeguards'||e.decision==='allow'?'b-ok':'b-bad'}">${esc(e.decision)}</span>
+          <span class="mono sub"> ${esc(e.event_type)}</span>
+          <span class="sub" style="float:right">${fmtTime(e.timestamp_utc)}</span></div>`).join('')
+        : '<div class="empty">no events yet — submit an alert above</div>';
+    }).catch(() => {});
+  } catch {}
+}
+async function agentAlert() {
+  if (!currentAgent) return;
+  const body = {cls: $('dr-cls').value, severity: parseFloat($('dr-sev').value)};
+  if ($('dr-detail').value.trim()) body.detail = $('dr-detail').value.trim();
+  try {
+    const r = await api('/agents/' + encodeURIComponent(currentAgent) + '/alert', {method:'POST', body});
+    $('dr-alert-out').innerHTML = `<div class="sub" style="margin-top:8px">${r.allowed ? '✅' : '⛔'} <b>${esc(r.decision)}</b> · ${esc(r.reason || '')}${r.shadowed ? ' · <i>shadowed (effect withheld)</i>' : ''}</div>` + decisionCard(r);
+    toast(`Alert → ${r.decision}`, r.allowed ? 'ok' : 'warn');
+  } catch {}
+}
+function confirmAgentHalt() {
+  confirmModal('Trip the kill switch?', `Agent <b class="mono">${esc(currentAgent)}</b> will deny all further actions until resumed.`, '■ Halt agent', agentHalt, 'danger');
+}
+async function agentHalt() {
+  try { await api('/agents/' + encodeURIComponent(currentAgent) + '/halt', {method:'POST'}); toast('Kill switch tripped', 'warn'); refreshDrawer(); }
+  catch {}
+}
+async function agentResume() {
+  try { await api('/agents/' + encodeURIComponent(currentAgent) + '/resume', {method:'POST'}); toast('Agent resumed', 'ok'); refreshDrawer(); }
+  catch {}
+}
+function confirmAgentDelete() {
+  confirmModal('Delete agent?', `Agent <b class="mono">${esc(currentAgent)}</b> and its ledger history will be removed from the fleet.`, 'Delete', agentDelete, 'danger');
+}
+async function agentDelete() {
+  try {
+    await api('/agents/' + encodeURIComponent(currentAgent), {method:'DELETE'});
+    toast('Agent deleted', 'ok'); closeDrawer(); loadAgents();
+  } catch {}
+}
+
+/* ============================= memory ============================= */
+async function loadMemory() {
+  const params = new URLSearchParams();
+  if ($('mem-tier').value) params.set('tier', $('mem-tier').value);
+  params.set('include_untrusted', 'true'); params.set('limit', '200');
+  try {
+    const d = await api('/memory?' + params);
+    $('mem-scope').textContent = 'scope: ' + d.scope;
+    const trustFilter = $('mem-trust').value;
+    const recs = d.records.filter(r => !trustFilter || r.trust === trustFilter);
+    $('nav-mem').style.display = recs.length ? '' : 'none'; $('nav-mem').textContent = recs.length;
+    $('mem-tbl').querySelector('tbody').innerHTML = recs.map(r => `<tr>
+      <td class="mono sub">${esc(r.record_id)}</td>
+      <td><span class="badge b-mut">${esc(r.tier)}</span></td>
+      <td>${trustBadge(r.trust)}</td>
+      <td class="sub truncate" style="max-width:420px" title="${esc(r.content)}">${esc(r.content)}</td>
+      <td class="sub">${fmtTime(r.created_at)}</td>
+      <td style="white-space:nowrap">
+        ${r.trust === 'untrusted' ? `<button class="ok-btn sm" onclick="promoteRecord('${esc(r.record_id)}')">promote</button>` : ''}
+        ${(r.trust === 'trusted' || r.trust === 'curated') ? `<button class="danger sm" onclick="quarantineRecord('${esc(r.record_id)}')">quarantine</button>` : ''}
+      </td></tr>`).join('') ||
+      `<tr><td colspan="6" class="empty">no records match the filter</td></tr>`;
+  } catch {}
+}
+async function promoteRecord(id) {
+  confirmModal('Promote record?', `Record <b class="mono">${esc(id)}</b> will be promoted from quarantine to <b>trusted</b> under your operator authority. It becomes influential for the agent.`, 'Promote', async () => {
+    try { await api('/memory/promote', {method:'POST', body:{record_id: id}}); toast('Record promoted', 'ok'); loadMemory(); }
+    catch {}
+  }, 'ok-btn');
+}
+async function quarantineRecord(id) {
+  confirmModal('Quarantine record?', `Record <b class="mono">${esc(id)}</b> will be demoted to <b>untrusted</b> (quarantined) — it stops influencing the agent.`, 'Quarantine', async () => {
+    try { await api('/memory/quarantine', {method:'POST', body:{record_id: id}}); toast('Record quarantined', 'warn'); loadMemory(); }
+    catch {}
+  }, 'danger');
+}
+
+/* ============================= ledger ============================= */
+async function loadLedger() {
+  try {
+    const d = await api('/ledger');
+    const intact = d.intact;
+    $('ledger-cards').innerHTML = `
+      <div class="card"><h3>Chain</h3><div class="metric" style="color:${intact?'var(--ok)':'var(--bad)'}">${intact?'intact ✓':'BROKEN'}</div>
+        <div class="sub">${intact ? 'hash chain + HMAC verified' : 'first broken at index ' + esc(d.first_broken_index)}</div></div>
+      <div class="card"><h3>Events</h3><div class="metric">${d.count}</div><div class="sub">append-only</div></div>
+      <div class="card"><h3>Head hash</h3><div class="mono" style="font-size:11px;word-break:break-all;margin-top:6px">${esc(d.head_hash)}</div></div>`;
+    const limit = Math.max(1, Math.min(parseInt($('ledger-limit').value || '50', 10) || 50, 1000));
+    const events = [...d.events].reverse().slice(0, limit);
+    $('ledger-tbl').querySelector('tbody').innerHTML = events.map((e, i) => `<tr>
+      <td class="sub">${d.count - i}</td>
+      <td class="sub">${fmtTime(e.timestamp_utc)}</td>
+      <td><span class="badge b-info">${esc(e.event_type)}</span></td>
+      <td class="mono sub">${esc(e.actor_identity)}</td>
+      <td><span class="badge ${String(e.decision).startsWith('allow')?'b-ok':'b-bad'}">${esc(e.decision)}</span></td>
+      <td class="sub truncate" style="max-width:300px" title="${esc(JSON.stringify(e.detail))}">${esc(JSON.stringify(e.detail))}</td>
+      <td class="mono" style="font-size:10px;color:var(--faint)" title="event ${esc(e.event_hash)}">${esc(String(e.event_hash||'').slice(0,10))}…</td>
+    </tr>`).join('') || `<tr><td colspan="7" class="empty">ledger is empty — run an alert</td></tr>`;
+  } catch {}
+}
+async function verifyLedger() {
+  try {
+    const d = await api('/ledger/verify');
+    toast(d.intact ? `Chain intact ✓ (${d.events} events)` : 'CHAIN BROKEN at index ' + d.first_broken_index, d.intact ? 'ok' : 'bad');
+    loadLedger();
+  } catch {}
+}
+async function exportLedger() {
+  try {
+    const d = await api('/ledger/export');
+    const blob = new Blob([JSON.stringify(d, null, 2)], {type: 'application/json'});
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'maestro-ledger-' + new Date().toISOString().replace(/[:.]/g, '-') + '.json';
+    a.click(); URL.revokeObjectURL(a.href);
+    toast(`Exported ${d.count} events`, 'ok');
+  } catch {}
+}
+
+/* ============================= controls ============================= */
+async function loadControls() {
+  try {
+    const d = await api('/controls');
+    const cov = d.coverage || {};
+    $('cov-cards').innerHTML = `
+      <div class="card"><h3>Total controls</h3><div class="metric">${cov.total}</div><div class="sub">across ${Object.keys(cov.by_layer||{}).length} layers</div></div>
+      <div class="card"><h3>Verified</h3><div class="metric" style="color:var(--ok)">${(cov.by_status||{}).verified||0}</div><div class="sub">${(cov.by_status||{}).tested||0} tested · ${(cov.by_status||{}).implemented||0} implemented</div></div>
+      <div class="card"><h3>Enforced or above</h3><div class="metric">${cov.enforced_or_above}</div>
+        <div class="sub">${Math.round((cov.enforcement_ratio||0)*100)}% enforcement ratio</div>${riskBar(cov.enforcement_ratio)}</div>
+      <div class="card"><h3>Boundary-enforced</h3><div class="metric" style="color:var(--accent2)">${cov.boundary_enforced}</div>
+        <div class="sub">${(d.violations||[]).length === 0 ? 'no audit violations ✓' : '⚠ violations present'}</div></div>`;
+    $('controls-tbl').querySelector('tbody').innerHTML = (d.controls||[]).map(c => `<tr>
+      <td class="mono">${esc(c.control_id)}</td><td>${esc(c.name)}</td>
+      <td><span class="badge b-mut">${esc(c.maestro_layer)}</span></td>
+      <td><span class="badge st-${esc(c.status)}">${esc(c.status)}</span></td>
+      <td class="sub">${esc(c.default_state)}</td>
+      <td class="mono sub truncate" style="max-width:280px" title="${esc(c.implementation||'')}">${esc(c.implementation || '—')}</td>
+    </tr>`).join('');
+  } catch {}
+}
+
+/* ============================= policies ============================= */
+async function validatePolicy() {
+  try {
+    const d = await api('/policies/validate', {method:'POST', body:{policy_yaml: $('pol-yaml').value}});
+    $('pol-out').innerHTML = `
+      <div style="margin-bottom:12px"><span class="badge ${d.valid?'b-ok':'b-bad'}" style="font-size:13px;padding:5px 14px">${d.valid ? '✓ VALID' : '✗ INVALID'}</span></div>
+      ${d.digest ? `<dl class="kv"><dt>digest</dt><dd class="mono sub">${esc(d.digest)}</dd></dl>` : ''}
+      ${d.errors && d.errors.length ? `<div class="card" style="border-color:rgba(239,68,68,.4);margin-bottom:10px">
+        <h3 style="color:#f87171">Errors</h3><ul style="padding-left:18px;font-size:13px">${d.errors.map(e=>`<li>${esc(e)}</li>`).join('')}</ul></div>` : ''}
+      ${d.warnings && d.warnings.length ? `<div class="card" style="border-color:rgba(245,158,11,.4);margin-bottom:10px">
+        <h3 style="color:#fbbf24">Warnings</h3><ul style="padding-left:18px;font-size:13px">${d.warnings.map(w=>`<li>${esc(w)}</li>`).join('')}</ul></div>` : ''}
+      ${d.bundle ? `<details class="raw"><summary>canonical bundle</summary><pre class="json">${esc(JSON.stringify(d.bundle, null, 2))}</pre></details>` : ''}`;
+    toast(d.valid ? 'Policy bundle is valid' : 'Policy bundle invalid', d.valid ? 'ok' : 'bad');
+  } catch {}
+}
+
+/* ============================= tenants ============================= */
+async function loadTenants() {
+  try {
+    const d = await api('/tenants');
+    $('tenants-tbl').querySelector('tbody').innerHTML = (d.tenants||[]).map(t => `<tr>
+      <td class="mono">${esc(t.tenant_id)}</td>
+      <td>${esc(t.display_name || '—')}</td>
+      <td class="sub">${t.agents}</td>
+      <td class="sub">${t.ledger_events}</td>
+      <td class="sub">${t.created_at ? fmtTime(t.created_at) : '—'}</td>
+      <td>${t.isolated ? '<span class="badge b-bad">isolated</span>' : '<span class="badge b-ok">active</span>'}</td>
+      <td>${t.isolated ? '' : `<button class="danger sm" onclick="confirmIsolate('${esc(t.tenant_id)}')">isolate</button>`}</td>
+    </tr>`).join('') || `<tr><td colspan="7" class="empty">no tenants</td></tr>`;
+  } catch {}
+}
+function openCreateTenant() {
+  openModal(`<h3>＋ Create tenant</h3>
+    <div class="field"><label>Tenant id</label><input id="nt-id" placeholder="e.g. acme"></div>
+    <div class="field"><label>Display name</label><input id="nt-name" placeholder="optional"></div>
+    <div class="actions"><button class="ghost" onclick="closeModal()">Cancel</button><button onclick="createTenant()">Create</button></div>`);
+}
+async function createTenant() {
+  const id = $('nt-id').value.trim();
+  if (!id) return toast('Tenant id is required', 'warn');
+  try {
+    await api('/tenants', {method:'POST', body:{tenant_id: id, display_name: $('nt-name').value.trim() || null}});
+    closeModal(); toast('Tenant ' + id + ' created', 'ok'); loadTenants();
+  } catch {}
+}
+function confirmIsolate(id) {
+  confirmModal('Isolate tenant?', `All agents in tenant <b class="mono">${esc(id)}</b> will be halted (kill switches tripped) and its plane denies further actions until explicitly resumed. This is the containment boundary.`, '■ Isolate tenant', async () => {
+    try { const r = await api('/tenants/' + encodeURIComponent(id) + '/isolate', {method:'POST'}); toast(`Tenant isolated (${r.agents_halted} agents halted)`, 'warn'); loadTenants(); }
+    catch {}
+  }, 'danger');
+}
+
+/* ============================= metrics ============================= */
+async function loadMetrics() {
+  try {
+    const [m, l] = await Promise.all([api('/metrics'), api('/ledger')]);
+    const pct = x => (x === null || x === undefined) ? '--' : (Math.round(x * 1000) / 10) + '%';
+    $('met-cards').innerHTML = `
+      <div class="card"><h3>Total actions</h3><div class="metric">${m.total_actions ?? 0}</div><div class="sub">ledger-derived</div></div>
+      <div class="card"><h3>Authorized</h3><div class="metric" style="color:var(--ok)">${m.authorized ?? 0}</div><div class="sub">${pct(m.authorization_rate)} authorization rate</div>${riskBar(m.authorization_rate)}</div>
+      <div class="card"><h3>Denied</h3><div class="metric" style="color:var(--bad)">${m.denied ?? 0}</div><div class="sub">unsafe action rate ${pct(m.unsafe_action_rate)}</div></div>
+      <div class="card"><h3>Ledger integrity</h3><div class="metric" style="color:${m.ledger_intact?'var(--ok)':'var(--bad)'}">${m.ledger_intact ? 'intact ✓' : 'BROKEN'}</div><div class="sub">policy blocks ${m.policy_block_count ?? 0} · tool failures ${m.tool_failure_rate ?? 0}</div></div>`;
+    const stages = Object.entries(m.denials_by_stage || {});
+    const maxStage = Math.max(1, ...stages.map(([,v]) => v));
+    $('met-denials').innerHTML = stages.length ? stages.map(([k, v]) =>
+      `<div style="margin-bottom:8px"><div style="display:flex;justify-content:space-between;font-size:12px">
+        <span>${esc(k)}</span><b>${v}</b></div><div class="riskbar"><i style="width:${v/maxStage*100}%;background:var(--bad)"></i></div></div>`).join('') :
+      '<div class="empty">no denials recorded</div>';
+    const dist = {};
+    (l.events || []).forEach(e => { dist[e.decision] = (dist[e.decision] || 0) + 1; });
+    const maxD = Math.max(1, ...Object.values(dist));
+    $('met-decisions').innerHTML = Object.entries(dist).map(([k, v]) =>
+      `<div style="margin-bottom:8px"><div style="display:flex;justify-content:space-between;font-size:12px">
+        <span>${esc(k)}</span><b>${v}</b></div><div class="riskbar"><i style="width:${v/maxD*100}%;background:var(--accent)"></i></div></div>`).join('') ||
+      '<div class="empty">no decisions yet</div>';
+  } catch {}
+}
+
+/* ============================= confirm modal ============================= */
+function confirmModal(title, bodyHtml, actionLabel, action, btnClass='') {
+  openModal(`<h3>${esc(title)}</h3><p style="font-size:13.5px;color:var(--muted);line-height:1.6">${bodyHtml}</p>
+    <div class="actions"><button class="ghost" onclick="closeModal()">Cancel</button>
+    <button class="${btnClass}" id="confirm-go">${esc(actionLabel)}</button></div>`);
+  $('confirm-go').onclick = async () => { closeModal(); await action(); };
+}
+
+/* ============================= boot ============================= */
+document.addEventListener('DOMContentLoaded', () => {
+  connectWS();
+  refreshHeader();
+  loadSection('overview');
+  setInterval(refreshHeader, 5000);
+  setInterval(() => loadSection(activeSec), 6000);
+});
+</script>
+</body>
+</html>

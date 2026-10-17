@@ -20,10 +20,12 @@ remains the documented production seam.)
 """
 from __future__ import annotations
 
+import time
 from dataclasses import asdict
 from typing import Any
 
-from fastapi import APIRouter, Depends
+import yaml
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from ..critique import (
@@ -36,11 +38,16 @@ from ..critique import (
 from ..maestro.layers import LAYERS
 from ..maestro.mapping import threat_risk_matrix
 from ..maestro.threats import load_threats
+from ..memory import MemoryTier
+from ..memory.store import MemoryIsolationError, MemoryWriteDenied, memory_resource
 from ..platform import AgentPlatform
 from ..security.control_status import to_report
+from ..security.identity import CapabilityError
 from ..security.metrics import compute_metrics
 from ..security.perimeter import DualLLMPerimeter
+from ..security.policy_bundle import PolicyBundle
 from ..telemetry.detection import Alert, AlertClass
+from .agent_registry import REGISTRY
 from .auth import (
     Principal,
     enforce_rate_limit,
@@ -79,6 +86,7 @@ class _ControlPlane:
 
     def __init__(self, tenant: str) -> None:
         self.tenant = tenant
+        self.created_at = time.time()
         self.perimeter = DualLLMPerimeter()
         self._threats = load_threats()
         self.reset(shadow=False)
@@ -112,6 +120,10 @@ class _TenantPlanes:
             self._planes[tenant] = plane
         return plane
 
+    def peek(self, tenant: str) -> _ControlPlane | None:
+        """The tenant's plane if one exists — never creates (for listing)."""
+        return self._planes.get(tenant)
+
     def tenants(self) -> list[str]:
         return sorted(self._planes)
 
@@ -121,6 +133,9 @@ class _TenantPlanes:
 
 
 _PLANES = _TenantPlanes()
+
+#: Tenants under isolation (containment): tenant -> isolated_at timestamp.
+_ISOLATED: dict[str, float] = {}
 
 
 # --------------------------------------------------------------------------- #
@@ -165,6 +180,29 @@ class ResetIn(BaseModel):
     shadow: bool = False
 
 
+class MemoryPromoteIn(BaseModel):
+    record_id: str
+    capability: str = Field(
+        "cap:memory:promote",
+        description="the capability being asserted; the scoped token is minted "
+        "server-side under the OPERATOR role and ledgered",
+    )
+
+
+class MemoryQuarantineIn(BaseModel):
+    record_id: str
+
+
+class TenantCreateIn(BaseModel):
+    tenant_id: str = Field(min_length=1, max_length=64, pattern=r"^[A-Za-z0-9:._-]+$")
+    display_name: str | None = None
+    quotas: dict[str, Any] | None = None
+
+
+class PolicyValidateIn(BaseModel):
+    policy_yaml: str
+
+
 # --------------------------------------------------------------------------- #
 # Read endpoints.
 # --------------------------------------------------------------------------- #
@@ -202,7 +240,10 @@ def state(plane: _ControlPlane = Depends(viewer_plane)) -> dict[str, Any]:
 @router.get("/blast-radius")
 def blast_radius(plane: _ControlPlane = Depends(viewer_plane)) -> dict[str, Any]:
     """The agent's bounded reach — legible on one screen (blueprint §2)."""
-    return plane.platform.blast_radius().as_dict()
+    blast = plane.platform.blast_radius()
+    d = blast.as_dict()
+    d["holds_irreversible_capability"] = blast.holds_irreversible_capability
+    return d
 
 
 @router.get("/ledger")
@@ -220,15 +261,29 @@ def ledger(plane: _ControlPlane = Depends(viewer_plane)) -> dict[str, Any]:
 
 
 @router.get("/memory")
-def memory(plane: _ControlPlane = Depends(viewer_plane)) -> dict[str, Any]:
-    """Scoped episodic memory, including quarantined (untrusted) records."""
+def memory(
+    tier: str | None = None,
+    include_untrusted: bool = True,
+    limit: int = 100,
+    plane: _ControlPlane = Depends(viewer_plane),
+) -> dict[str, Any]:
+    """Scoped memory with tier/trust/limit filters, quarantined records included."""
     store = plane.platform.memory
     scope = plane.platform.scope
-    records = store.recall(scope, include_untrusted=True)
+    tier_filter: MemoryTier | None = None
+    if tier:
+        try:
+            tier_filter = MemoryTier(tier.lower())
+        except ValueError:
+                    raise HTTPException(status_code=400, detail=f"unknown tier {tier!r}") from None
+    records = store.recall(
+        scope, tier=tier_filter, include_untrusted=include_untrusted,
+        limit=max(1, min(limit, 1000)))
     return {
         "scope": scope.key,
         "records": [r.as_dict() for r in records],
         "count": len(records),
+        "total": len(records),
     }
 
 
@@ -253,13 +308,15 @@ def submit_alert(
     body: AlertIn, plane: _ControlPlane = Depends(operator_plane)
 ) -> dict[str, Any]:
     """Run one alert through the live loop and return the decision card."""
-    import time
-
     cls = _parse_class(body.cls)
     detail = body.detail or f"operator-injected {cls.value} alert"
-    alert = Alert(ts=time.time(), cls=cls, severity=body.severity, detail=detail)
+    ts = time.time()
+    alert = Alert(ts=ts, cls=cls, severity=body.severity, detail=detail)
     result = plane.platform.handle_alert(alert)
     return {
+        "alert_id": f"{plane.platform.scope.agent}:{int(ts * 1000)}",
+        "tenant": plane.tenant,
+        "created_at": ts,
         "alert_class": result.alert_class,
         "proposed_action": result.proposed_action,
         "allowed": result.allowed,
@@ -297,13 +354,13 @@ def critique(
 def halt(plane: _ControlPlane = Depends(operator_plane)) -> dict[str, Any]:
     """Trip the kill switch — deny all further actions (this tenant's plane)."""
     plane.platform.halt()
-    return {"halted": True}
+    return {"halted": True, "message": f"tenant {plane.tenant!r} plane halted (kill switch tripped)"}
 
 
 @router.post("/resume")
 def resume(plane: _ControlPlane = Depends(operator_plane)) -> dict[str, Any]:
     plane.platform.resume()
-    return {"halted": False}
+    return {"halted": False, "message": f"tenant {plane.tenant!r} plane resumed"}
 
 
 @router.post("/reset")
@@ -318,4 +375,248 @@ def reset(body: ResetIn, plane: _ControlPlane = Depends(admin_plane)) -> dict[st
         "tenant": plane.tenant,
         "shadow": plane.shadow,
         "ledger_events": len(plane.platform.ledger),
+    }
+
+
+# --------------------------------------------------------------------------- #
+# Ledger verification and export (the tamper-evidence surface, BP11).
+# --------------------------------------------------------------------------- #
+@router.get("/ledger/verify")
+def ledger_verify(plane: _ControlPlane = Depends(viewer_plane)) -> dict[str, Any]:
+    """Re-walk the hash chain + HMACs; -1 first_broken_index means intact."""
+    lg = plane.platform.ledger
+    first_broken = lg.verify_chain()
+    return {
+        "intact": first_broken == -1,
+        "events": len(lg),
+        "head_hash": lg.head_hash,
+        "first_broken_index": first_broken if first_broken != -1 else None,
+    }
+
+
+@router.get("/ledger/export")
+def ledger_export(
+    limit: int | None = None, plane: _ControlPlane = Depends(viewer_plane)
+) -> dict[str, Any]:
+    """Export ledger events (most recent last, as the chain is ordered)."""
+    events = list(plane.platform.ledger.events)
+    if limit is not None:
+        events = events[-max(1, min(limit, 10_000)):]
+    return {"events": [asdict(e) for e in events], "count": len(events)}
+
+
+# --------------------------------------------------------------------------- #
+# Memory management: promote (capability-gated) and quarantine (operator).
+# --------------------------------------------------------------------------- #
+@router.post("/memory/promote")
+def promote_memory(
+    body: MemoryPromoteIn,
+    plane: _ControlPlane = Depends(operator_plane),
+    principal: Principal = Depends(require_operator),
+) -> dict[str, Any]:
+    """Promote a quarantined record to TRUSTED.
+
+    The promotion itself is capability-gated in the store: the server mints a
+    short-lived ``cap:memory:promote`` token scoped to this tenant's memory
+    resource *on behalf of the authenticated OPERATOR principal* — the RBAC
+    boundary is the authorization, the capability is the mechanism, and the
+    promotion lands in the tenant's tamper-evident ledger with provenance.
+    """
+    from ..memory.store import PROMOTE_CAPABILITY
+    store = plane.platform.memory
+    scope = plane.platform.scope
+    try:
+        token = store.issuer.issue(
+            subject=principal.subject,
+            capability=PROMOTE_CAPABILITY,
+            resource_constraint=memory_resource(scope),
+            tenant=scope.tenant,
+            ttl_seconds=60.0,
+        )
+        record = store.promote(body.record_id, scope, token=token)
+    except CapabilityError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except MemoryWriteDenied as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except MemoryIsolationError as exc:
+        raise HTTPException(
+            status_code=404, detail=f"record {body.record_id!r} not found in scope") from exc
+    return {"promoted": True, "record": record.as_dict()}
+
+
+@router.post("/memory/quarantine")
+def quarantine_memory(
+    body: MemoryQuarantineIn,
+    plane: _ControlPlane = Depends(operator_plane),
+    principal: Principal = Depends(require_operator),
+) -> dict[str, Any]:
+    """Quarantine a trusted record (demote to UNTRUSTED) — risk-reducing, so
+    operator authority suffices; the demotion is ledgered and attributable."""
+    store = plane.platform.memory
+    scope = plane.platform.scope
+    try:
+        record = store.demote(body.record_id, scope, actor=principal.subject)
+    except MemoryWriteDenied as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except MemoryIsolationError as exc:
+        raise HTTPException(
+            status_code=404, detail=f"record {body.record_id!r} not found in scope") from exc
+    return {"quarantined": True, "record": record.as_dict()}
+
+
+# --------------------------------------------------------------------------- #
+# Tenant administration (control-plane ADMIN; cross-tenant by charter).
+# --------------------------------------------------------------------------- #
+_TENANT_META: dict[str, dict[str, Any]] = {}
+
+
+def _tenant_info(tenant_id: str) -> dict[str, Any]:
+    plane = _PLANES.peek(tenant_id)
+    meta = _TENANT_META.get(tenant_id, {})
+    return {
+        "tenant_id": tenant_id,
+        "display_name": meta.get("display_name") or tenant_id,
+        "created_at": plane.created_at if plane is not None else meta.get("created_at"),
+        "quotas": meta.get("quotas") or {},
+        "agents": len(REGISTRY.list(tenant_id)),
+        "ledger_events": len(plane.platform.ledger) if plane is not None else 0,
+        "isolated": tenant_id in _ISOLATED,
+        "isolated_at": _ISOLATED.get(tenant_id),
+    }
+
+
+def _known_tenants() -> list[str]:
+    return sorted(set(_PLANES.tenants()) | set(REGISTRY.tenants()) | set(_TENANT_META))
+
+
+@router.get("/tenants")
+def list_tenants(principal: Principal = Depends(require_admin)) -> dict[str, Any]:
+    """Every known tenant partition (admin: this is the control-plane view)."""
+    tenants = [_tenant_info(t) for t in _known_tenants()]
+    return {"tenants": tenants, "total": len(tenants)}
+
+
+@router.post("/tenants", status_code=201)
+def create_tenant(
+    body: TenantCreateIn, principal: Principal = Depends(require_admin)
+) -> dict[str, Any]:
+    """Register a new tenant partition (its plane materializes lazily)."""
+    if body.tenant_id in _known_tenants():
+        raise HTTPException(status_code=409, detail=f"tenant {body.tenant_id!r} already exists")
+    _TENANT_META[body.tenant_id] = {
+        "display_name": body.display_name,
+        "quotas": body.quotas or {},
+        "created_at": time.time(),
+        "created_by": principal.subject,
+    }
+    _PLANES.for_tenant(body.tenant_id)  # materialize the isolated plane
+    return _tenant_info(body.tenant_id)
+
+
+@router.get("/tenants/{tenant_id}")
+def get_tenant(tenant_id: str, principal: Principal = Depends(require_admin)) -> dict[str, Any]:
+    if tenant_id not in _known_tenants():
+        raise HTTPException(status_code=404, detail=f"tenant {tenant_id!r} not found")
+    return _tenant_info(tenant_id)
+
+
+@router.post("/tenants/{tenant_id}/isolate")
+def isolate_tenant(
+    tenant_id: str, principal: Principal = Depends(require_admin)
+) -> dict[str, Any]:
+    """Containment: trip the kill switch on the tenant's plane and every agent
+    in its fleet. Fail-closed — all further actions in that tenant are denied
+    until an operator explicitly resumes them."""
+    if tenant_id not in _known_tenants():
+        raise HTTPException(status_code=404, detail=f"tenant {tenant_id!r} not found")
+    plane = _PLANES.peek(tenant_id)
+    if plane is not None:
+        plane.platform.halt()
+    agents_halted = REGISTRY.halt_all(tenant_id)
+    _ISOLATED[tenant_id] = time.time()
+    return {
+        "tenant_id": tenant_id,
+        "isolated": True,
+        "agents_halted": agents_halted,
+        "plane_halted": plane is not None,
+        "message": f"tenant {tenant_id!r} isolated: kill switches tripped",
+    }
+
+
+# --------------------------------------------------------------------------- #
+# Policy validation (dry-run a bundle against the executor contract).
+# --------------------------------------------------------------------------- #
+@router.post("/policies/validate")
+def validate_policy(
+    body: PolicyValidateIn, plane: _ControlPlane = Depends(operator_plane)
+) -> dict[str, Any]:
+    """Validate a YAML policy bundle without activating it.
+
+    Checks the executor's actual contract: ``allowed_intents`` must be a list of
+    known intents (the platform rejects unknown ones at construction), ``version``
+    a positive integer, ``limits`` a numeric mapping. Returns the bundle's
+    content digest so the validated artifact is pinned.
+    """
+    from ..security.action import INTENT_REGISTRY
+
+    errors: list[str] = []
+    warnings: list[str] = []
+    try:
+        doc = yaml.safe_load(body.policy_yaml)
+    except yaml.YAMLError as exc:
+        return {"valid": False, "errors": [f"YAML parse error: {exc}"],
+                "warnings": [], "digest": None}
+
+    if not isinstance(doc, dict):
+        return {"valid": False,
+                "errors": ["policy document must be a YAML mapping "
+                           "(allowed_intents, version, limits)"],
+                "warnings": [], "digest": None}
+
+    version = doc.get("version", 1)
+    if not isinstance(version, int) or isinstance(version, bool) or version < 1:
+        errors.append("version must be a positive integer")
+
+    intents = doc.get("allowed_intents")
+    if intents is None:
+        errors.append("allowed_intents is required (an explicit allow-list)")
+        intents = []
+    elif not isinstance(intents, list) or not all(isinstance(i, str) for i in intents):
+        errors.append("allowed_intents must be a list of strings")
+        intents = []
+    else:
+        if not intents:
+            warnings.append("allowed_intents is empty: the bundle admits nothing (lockdown)")
+        dupes = sorted({i for i in intents if intents.count(i) > 1})
+        if dupes:
+            warnings.append(f"duplicate intents ignored: {dupes}")
+            seen: list[str] = []
+            intents = [i for i in intents if not (i in seen or seen.append(i))]
+        unknown = [i for i in intents if i not in INTENT_REGISTRY]
+        if unknown:
+            errors.append(
+                f"unknown intents (not in the executor vocabulary): {sorted(set(unknown))}")
+
+    limits = doc.get("limits") or {}
+    if not isinstance(limits, dict) or not all(
+        isinstance(v, (int, float)) and not isinstance(v, bool) for v in limits.values()
+    ):
+        errors.append("limits must be a mapping of name -> number")
+        limits = {}
+
+    if errors:
+        return {"valid": False, "errors": errors, "warnings": warnings, "digest": None}
+
+    bundle = PolicyBundle.create(
+        version=version,
+        allowed_intents=intents,
+        limits={k: float(v) for k, v in limits.items()},
+        provenance="api:/api/policies/validate",
+    )
+    return {
+        "valid": True,
+        "errors": [],
+        "warnings": warnings,
+        "digest": bundle.digest(),
+        "bundle": bundle.as_dict(),
     }

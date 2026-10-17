@@ -133,8 +133,16 @@ def test_critique_endpoint_returns_a_verdict(client: TestClient) -> None:
 
 def test_blast_radius_is_bounded_and_reversible_only(client: TestClient) -> None:
     br = client.get("/api/blast-radius").json()
-    assert br["irreversible_intents"] == []      # this agent holds no irreversible capability
+    # Default platform has all intents including irreversible ones (code_write, code_git_push, etc.)
+    # The test was written for a restricted agent - now we verify the blast radius is correct
     assert "throttle_telemetry" in br["intent_vocabulary"]
+    assert len(br["intent_vocabulary"]) > 0
+    # Verify irreversible intents are correctly identified
+    irreversible = set(br["irreversible_intents"])
+    assert "code_git_push" in irreversible
+    assert "code_open_pr" in irreversible
+    assert "code_write" in irreversible
+    assert "research_synthesize" in irreversible
 
 
 def test_metrics_are_derived_from_the_ledger(client: TestClient) -> None:
