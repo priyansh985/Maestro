@@ -124,7 +124,10 @@ def _started_identity(log):
 
 def _terminated(identity):
     try:
-        return not identity.is_running() or identity.status() == psutil.STATUS_ZOMBIE
+        if not psutil.pid_exists(identity.pid):
+            return True
+        return (not identity.is_running()
+                or identity.status() in (psutil.STATUS_ZOMBIE, psutil.STATUS_DEAD, "terminated"))
     except psutil.NoSuchProcess:
         return True
 
@@ -184,6 +187,9 @@ def test_completed_check_cannot_leave_an_owned_descendant(tmp_path, monkeypatch)
         result = run_check(CheckSpec("completed_tree", argv),
                            cwd=tmp_path, output_dir=tmp_path, timeout_seconds=300)
         assert result.status == "passed"
+        deadline = time.monotonic() + 10
+        while not _terminated(descendants[0]) and time.monotonic() < deadline:
+            time.sleep(0.05)
         assert _terminated(descendants[0])
     finally:
         for descendant in descendants:

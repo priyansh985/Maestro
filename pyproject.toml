@@ -8,7 +8,7 @@ name = "maestro-secure-agentic-ai"
 version = "1.0.0"
 description = "Reproduction of arXiv:2508.10043 - Securing Agentic AI (MAESTRO threat modeling for LLM-based network monitoring agents)"
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.10"
 license = {text = "MIT"}
 authors = [{name = "Reproduction"}]
 dependencies = [
