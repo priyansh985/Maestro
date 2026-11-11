@@ -15,3 +15,17 @@ results/*
 .mypy_cache/
 .ruff_cache/
 *.egg-info/
+build/
+dist/
+.wheel-smoke/
+.venv312/
+.venv313/
+
+# Run artifacts and harness-local folders
+*.out
+full_suite*.out
+repro*.out
+validate_v1.out
+.zcode/
+claude-history/
+*-this-session-is-being-continued-from-a-previous-c.txt
