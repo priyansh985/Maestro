@@ -69,10 +69,17 @@ CONTROLS: list[Control] = [
     # L1 — Foundation models / reasoning
     Control(
         "CTRL-L1-01", "LLM guardrails + output validators", "L1",
-        Status.DECLARED, "n/a", None,
-        None, None,
-        notes="Catalogue entry in maestro/mitigation.py; no runtime output "
-              "policy validator implemented yet (Phase 2).",
+        Status.TESTED, "enabled",
+        "platform/agent_platform.py:AgentPlatform (output validator gate)",
+        "security/output_validator.py:OutputValidator",
+        "tests/test_output_validator.py + tests/test_platform.py",
+        notes="Runtime output policy validator on the model->proposal path: "
+              "validates the reasoner's proposed action/summary/metadata against "
+              "an allowed-intent set, prompt-injection markers, out-of-scope "
+              "targets, length caps and tool-argument smuggling patterns. "
+              "Default-on and wired into AgentPlatform.handle_alert; a failing "
+              "output is quarantined (not executed) and recorded in the ledger. "
+              "Adversarially tested (injected outputs blocked on the live loop).",
     ),
     Control(
         "CTRL-L1-02", "Deterministic reasoner (offline default)", "L1",

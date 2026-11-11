@@ -5,12 +5,12 @@
       "control_id": "CTRL-L1-01",
       "name": "LLM guardrails + output validators",
       "maestro_layer": "L1",
-      "status": "declared",
-      "default_state": "n/a",
-      "enforcement_point": null,
-      "implementation": null,
-      "test_id": null,
-      "notes": "Catalogue entry in maestro/mitigation.py; no runtime output policy validator implemented yet (Phase 2)."
+      "status": "tested",
+      "default_state": "enabled",
+      "enforcement_point": "platform/agent_platform.py:AgentPlatform (output validator gate)",
+      "implementation": "security/output_validator.py:OutputValidator",
+      "test_id": "tests/test_output_validator.py + tests/test_platform.py",
+      "notes": "Runtime output policy validator on the model->proposal path: validates the reasoner's proposed action/summary/metadata against an allowed-intent set, prompt-injection markers, out-of-scope targets, length caps and tool-argument smuggling patterns. Default-on and wired into AgentPlatform.handle_alert; a failing output is quarantined (not executed) and recorded in the ledger. Adversarially tested (injected outputs blocked on the live loop)."
     },
     {
       "control_id": "CTRL-L1-02",
@@ -390,10 +390,10 @@
   "coverage": {
     "total": 35,
     "by_status": {
-      "declared": 1,
+      "declared": 0,
       "implemented": 7,
       "enforced": 0,
-      "tested": 20,
+      "tested": 21,
       "verified": 7
     },
     "by_layer": {
@@ -405,9 +405,9 @@
       "L6": 3,
       "L7": 3
     },
-    "enforced_or_above": 27,
-    "enforcement_ratio": 0.771,
-    "boundary_enforced": 15
+    "enforced_or_above": 28,
+    "enforcement_ratio": 0.8,
+    "boundary_enforced": 16
   },
   "violations": []
 }

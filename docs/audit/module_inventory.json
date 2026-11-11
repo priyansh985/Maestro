@@ -1,14 +1,14 @@
 {
   "schema_version": "1.0",
   "package_root": "src/maestro",
-  "module_count": 107,
-  "total_lines": 19066,
+  "module_count": 110,
+  "total_lines": 19490,
   "modules": [
     {
       "module": "maestro.__init__",
       "path": "src/maestro/__init__.py",
       "package": ".",
-      "lines": 33,
+      "lines": 34,
       "role": "MAESTRO \u2014 Policy-Governed Execution Platform for Agentic AI."
     },
     {
@@ -64,21 +64,21 @@
       "module": "maestro.cli",
       "path": "src/maestro/cli.py",
       "package": ".",
-      "lines": 636,
+      "lines": 637,
       "role": "MAESTRO CLI \u2014 Full lifecycle management surface (BP11)."
     },
     {
       "module": "maestro.compliance.export",
       "path": "src/maestro/compliance/export.py",
       "package": "compliance",
-      "lines": 332,
+      "lines": 311,
       "role": "Compliance Export Generator (BP12)."
     },
     {
       "module": "maestro.config",
       "path": "src/maestro/config.py",
       "package": ".",
-      "lines": 39,
+      "lines": 51,
       "role": "``src/maestro/config.py`` \u2014 single entry point for loading ``configs/default.yaml``."
     },
     {
@@ -99,7 +99,7 @@
       "module": "maestro.connectors.config",
       "path": "src/maestro/connectors/config.py",
       "package": "connectors",
-      "lines": 118,
+      "lines": 125,
       "role": "Build a :class:`ConnectorRegistry` from YAML + environment."
     },
     {
@@ -260,7 +260,7 @@
       "module": "maestro.dr.disaster_recovery",
       "path": "src/maestro/dr/disaster_recovery.py",
       "package": "dr",
-      "lines": 678,
+      "lines": 668,
       "role": "Disaster Recovery for MAESTRO (BP12)."
     },
     {
@@ -421,7 +421,7 @@
       "module": "maestro.platform.agent_platform",
       "path": "src/maestro/platform/agent_platform.py",
       "package": "platform",
-      "lines": 538,
+      "lines": 584,
       "role": "The agent control loop:"
     },
     {
@@ -470,8 +470,22 @@
       "module": "maestro.scripts.validate_v1",
       "path": "src/maestro/scripts/validate_v1.py",
       "package": "scripts",
-      "lines": 308,
-      "role": "MAESTRO v1.0 Validation Script \u2014 runs all checks, exits non-zero on failure."
+      "lines": 108,
+      "role": "Collect offline checks without implying production readiness."
+    },
+    {
+      "module": "maestro.scripts.validation_evidence",
+      "path": "src/maestro/scripts/validation_evidence.py",
+      "package": "scripts",
+      "lines": 186,
+      "role": "Offline verification primitives; results never grant deployment authority."
+    },
+    {
+      "module": "maestro.scripts.windows_job",
+      "path": "src/maestro/scripts/windows_job.py",
+      "package": "scripts",
+      "lines": 131,
+      "role": "Own ordinary Windows check descendants before execution; not a sandbox."
     },
     {
       "module": "maestro.sdk.__init__",
@@ -484,7 +498,7 @@
       "module": "maestro.sdk.client",
       "path": "src/maestro/sdk/client.py",
       "package": "sdk",
-      "lines": 473,
+      "lines": 474,
       "role": "High-level SDK client classes for MAESTRO."
     },
     {
@@ -512,7 +526,7 @@
       "module": "maestro.security.__init__",
       "path": "src/maestro/security/__init__.py",
       "package": "security",
-      "lines": 172,
+      "lines": 181,
       "role": "MAESTRO-SecOps security layer."
     },
     {
@@ -561,7 +575,7 @@
       "module": "maestro.security.control_status",
       "path": "src/maestro/security/control_status.py",
       "package": "security",
-      "lines": 664,
+      "lines": 671,
       "role": "Phase-0 \"Truth Audit\":"
     },
     {
@@ -600,6 +614,13 @@
       "role": "Operational security metrics, computed from the audit ledger."
     },
     {
+      "module": "maestro.security.output_validator",
+      "path": "src/maestro/security/output_validator.py",
+      "package": "security",
+      "lines": 242,
+      "role": "Deterministic LLM output policy validator (CTRL-L1-01)."
+    },
+    {
       "module": "maestro.security.perimeter",
       "path": "src/maestro/security/perimeter.py",
       "package": "security",
@@ -617,14 +638,14 @@
       "module": "maestro.security.policy_bundle_signed",
       "path": "src/maestro/security/policy_bundle_signed.py",
       "package": "security",
-      "lines": 489,
+      "lines": 473,
       "role": "Signed Policy Bundles for Production Deployment (BP12)."
     },
     {
       "module": "maestro.security.release_gate",
       "path": "src/maestro/security/release_gate.py",
       "package": "security",
-      "lines": 257,
+      "lines": 259,
       "role": "Release Gate Registry (BP7 completion)."
     },
     {
@@ -652,7 +673,7 @@
       "module": "maestro.server.agent_registry",
       "path": "src/maestro/server/agent_registry.py",
       "package": "server",
-      "lines": 267,
+      "lines": 268,
       "role": "Per-tenant registry of live agent platforms \u2014 the fleet surface (BP11)."
     },
     {
@@ -666,7 +687,7 @@
       "module": "maestro.server.app",
       "path": "src/maestro/server/app.py",
       "package": "server",
-      "lines": 136,
+      "lines": 146,
       "role": "FastAPI + WebSocket backend (Sec 3.1, Sec 6.1 \u300cFastAPI framework\u300d)."
     },
     {
@@ -687,7 +708,7 @@
       "module": "maestro.server.control_api",
       "path": "src/maestro/server/control_api.py",
       "package": "server",
-      "lines": 623,
+      "lines": 622,
       "role": "REST API that drives the *real* control plane behind the web control panel."
     },
     {
@@ -715,7 +736,7 @@
       "module": "maestro.server.oidc",
       "path": "src/maestro/server/oidc.py",
       "package": "server",
-      "lines": 414,
+      "lines": 430,
       "role": "OIDC/OAuth2 Integration for Enterprise Identity (BP12)."
     },
     {

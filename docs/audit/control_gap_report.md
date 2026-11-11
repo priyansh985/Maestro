@@ -12,11 +12,11 @@ it. Numbers are generated from
 |---|---|---|
 | Total controls | 35 | 32 → 33 → 34 → **35** (added L4-07, L4-08, L3-04) |
 | `verified` (adversarial/bypass tested) | 7 | 2 → 3 → 4 → 5 → 6 → **7** |
-| `tested` | 20 | 17 → 18 → 19 → **20** |
+| `tested` | 21 | 17 → 18 → 19 → 20 → **21** |
 | `implemented` (not on a live boundary) | 7 | 10 → 9 → **7** |
-| `declared` (no code path) | 1 | 3 → 2 → **1** |
-| **enforced_or_above** | 27 (ratio **0.771**) | 0.594 → 0.686 → 0.743 → **0.771** |
-| **boundary_enforced** (on the AgentPlatform live loop) | **15** | 10 → 12 → 14 → **15** (BP-gov: L6-03) |
+| `declared` (no code path) | 0 | 3 → 2 → 1 → **0** |
+| **enforced_or_above** | 28 (ratio **0.800**) | 0.594 → 0.686 → 0.743 → 0.771 → **0.800** |
+| **boundary_enforced** (on the AgentPlatform live loop) | **16** | 10 → 12 → 14 → 15 → **16** (CTRL-L1-01) |
 | Audit invariant violations | **0** | — |
 
 The honest read: **15 controls actually gate a real side effect**; another 10 run
@@ -70,7 +70,7 @@ catalogue-only. The enforcement ratio (0.771) is real, not aspirational — the
 |---|---|---|---|
 | ~~**CTRL-L4-03** Server auth / zero-trust API~~ | L4 | **CLOSED (BP3.1+BP3.2)** — the whole `/api` surface (control plane + connectors) requires a signed bearer token + role, tenant-confined, fail-closed, rate-limited per principal (CTRL-L4-07). Remaining as prod seams: OIDC/SSO, external RBAC store, Postgres RLS. | ✅ done |
 | ~~**CTRL-L6-03** Signed policy bundles / two-person change~~ | L6 | **CLOSED (BP-gov)** — the executor allow-list is a signed, versioned bundle; changes need a two-person rule; the active bundle is verified at the side-effect boundary (fail-closed). Seam: external signer identities (OIDC/KMS per approver). | ✅ done |
-| **CTRL-L1-01** LLM guardrails + output validators | L1 | No runtime *output* policy validator (input perimeter CTRL-L1-04 exists). | BP7 |
+| ~~**CTRL-L1-01** LLM guardrails + output validators~~ | L1 | **CLOSED (v1.1)** — runtime output policy validator on the model→proposal path, wired into AgentPlatform (default-on); failing outputs are quarantined and audited. Adversarially tested (injected outputs blocked on the live loop). | ✅ done |
 
 ## Gap B — `implemented` but not on the live side-effect boundary
 

@@ -32,6 +32,8 @@ from ..security.circuit_breaker import CircuitBreaker
 from ..security.confidence import ConfidenceSignals
 from ..security.critique_gate import HMDCGate, PreExecutionGate
 from ..security.enforcement import (
+    POLICY_DIGEST,
+    ActionState,
     Approver,
     EnforcementResult,
     PolicyEnforcementPoint,
@@ -39,8 +41,9 @@ from ..security.enforcement import (
 )
 from ..security.identity import SIGNING_KEY_ENV, CapabilityIssuer
 from ..security.ledger import Ledger
+from ..security.output_validator import OutputValidator
 from ..security.policy_bundle import PolicyRegistry, genesis_registry
-from ..security.risk_engine import RiskInputs
+from ..security.risk_engine import Decision, RiskInputs
 from ..security.sandbox import ExecutionSandbox, SandboxPolicy
 from ..telemetry.detection import Alert, AlertClass
 from .blast_radius import BlastRadius
@@ -251,6 +254,8 @@ class AgentPlatform:
         enable_critique: bool = True,
         policy_registry: PolicyRegistry | None = None,
         enable_policy_bundle: bool = True,
+        output_validator: OutputValidator | None = None,
+        enable_output_validation: bool = True,
     ) -> None:
         from ..agent.reasoning import StubReasoner
 
@@ -293,6 +298,15 @@ class AgentPlatform:
             self._gate = critique_gate
         else:
             self._gate = default_critique_gate()
+
+        # Output policy validator (CTRL-L1-01): checks the reasoner's proposed
+        # action/summary/metadata before it becomes a typed proposal. Default-on.
+        if not enable_output_validation:
+            self._output_validator: OutputValidator | None = None
+        elif output_validator is not None:
+            self._output_validator = output_validator
+        else:
+            self._output_validator = OutputValidator()
 
         # This agent's (possibly restricted) intent vocabulary. A restricted
         # vocabulary is least-privilege: the agent holds no capability for intents
@@ -460,6 +474,38 @@ class AgentPlatform:
         # 2. The reasoner PROPOSES an action (LLM or offline stub).
         result = self._reasoner.reason(alert, ctx={"evidence_graph": evidence_graph})  # type: ignore[attr-defined]
         intent = result.action
+
+        # 2b. Output policy validation (CTRL-L1-01): the model's proposed
+        #     action/summary/metadata must satisfy the deterministic output
+        #     policy before it can become a typed proposal. On failure the
+        #     proposal is quarantined — no execution, recorded in the ledger.
+        if self._output_validator is not None:
+            validation = self._output_validator.validate(result)
+            if not validation.passed:
+                import hashlib
+
+                input_hash = "sha256:" + hashlib.sha256(
+                    repr({"action": result.action, "summary": result.summary,
+                          "metadata": result.metadata}).encode("utf-8")
+                ).hexdigest()
+                reason = "output_validator: " + "; ".join(validation.violations)
+                event = self._ledger.append(
+                    event_type="tool.execution.denied",
+                    actor_identity=self._agent_id,
+                    decision=Decision.DENY_AUTONOMOUS.value,
+                    input_hash=input_hash,
+                    policy_digest=POLICY_DIGEST,
+                    risk_after=5.0,
+                    detail={"stage": "output_validator", "reason": reason,
+                            "violations": list(validation.violations),
+                            "decision_card": {}},
+                )
+                enforcement = EnforcementResult(
+                    allowed=False, decision=Decision.DENY_AUTONOMOUS,
+                    reason=reason, residual_risk=5.0, event_id=event.event_id,
+                    state=ActionState.QUARANTINED, decision_card={},
+                )
+                return PlatformResult(alert.cls.value, result.action, enforcement)
 
         # 3. Deterministically assemble a typed proposal. The model does not get
         #    to choose scope: resource + ttl come from the platform, not the LLM.

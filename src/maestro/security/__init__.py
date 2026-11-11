@@ -60,6 +60,11 @@ from .identity import (
 )
 from .ledger import AuditEvent, Ledger
 from .metrics import compute_metrics
+from .output_validator import (
+    OutputValidationResult,
+    OutputValidator,
+    validate_output,
+)
 from .perimeter import (
     Disposition,
     DualLLMPerimeter,
@@ -143,6 +148,10 @@ __all__ = [
     "compute_metrics",
     # dual-LLM injection perimeter (L1 input boundary)
     "DualLLMPerimeter",
+    # LLM output policy validator (CTRL-L1-01)
+    "OutputValidator",
+    "OutputValidationResult",
+    "validate_output",
     "InjectionScanner",
     "InjectionSignal",
     "SignalCategory",
