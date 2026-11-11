@@ -41,10 +41,17 @@ flagged — is in [`docs/BLUEPRINT.md`](docs/BLUEPRINT.md).
 > that the paper *cites and uses* — our L1–L7 are CSA MAESTRO's layers, not an
 > original taxonomy.
 
-**Status:** 361 tests pass · `ruff` + `mypy` clean · reproduce pipeline +
-connector + security + platform + memory + orchestration + critique + domains +
-perimeter + control-panel API suites all green (see §6). Everything works
-**offline with no API key** (deterministic stub default).
+**Status correction — 30 October 2026:** enterprise foundation work (E0) is in
+progress. Production startup and release admission are deliberately unavailable.
+The October 24 baseline had 636 passing tests and 41 mypy errors; older green
+status statements below describe earlier snapshots. Current checks and remaining
+verification are recorded in [the E0 status report](docs/audit/2026-10-30-e0-status.md).
+The deterministic stub remains the offline research default.
+
+The configured package floor is now Python 3.12, with 3.12/3.13 as the target
+verification matrix. Clean runtime/image checks must pass before this migration
+is considered complete. See [validation](docs/VALIDATION.md) and the
+[enterprise to-do list](docs/ENTERPRISE_TODO.md).
 
 ---
 
@@ -178,7 +185,7 @@ follows Sec 4.1 verbatim and lives in `src/maestro/maestro/layers.py`.
 │       ├── playground.py     # /playground connector testing dashboard
 │       ├── control_api.py    # /api/* control-plane REST router (drives the live loop)
 │       └── control_panel.py  # /control offline operator SPA (blueprint §3)
-├── tests/                    # 361 tests: reproduction + connectors + security + platform + memory + orchestration + critique + domains + perimeter + control-panel
+├── tests/                    # offline reproduction, connector, security, platform and API tests
 ├── docs/
 │   ├── CONNECTORS.md         # connector system: usage, add-a-provider, checklist
 │   ├── SECOPS.md             # security control-plane direction + status + roadmap
@@ -328,7 +335,7 @@ bash reproduce.sh
 ```bat
 reproduce.bat
 ```
-(Requires Python ≥ 3.10. The script creates `.venv/`, installs the
+(Requires Python ≥ 3.12. The script creates `.venv/`, installs the
 package in editable mode with `[dev]` extras, runs tests, then runs
 `python -m maestro.experiments.runner`.)
 
@@ -520,7 +527,7 @@ Environment variables:
 
 ## 6. Verification status
 
-Verified end-to-end (**361 tests pass**; `ruff` + `mypy` clean; full
+Historical verification snapshot (**361 tests passed**; `ruff` + `mypy` were clean; full
 `reproduce.sh`/`reproduce.bat` pipeline green):
 * Eq.(1) implementations match Sec 4.3.1 illustrative numerical
   examples, including the Low/Moderate/High buckets 3 → 8 → 9

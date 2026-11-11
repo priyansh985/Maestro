@@ -8,8 +8,10 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import os
 import subprocess
 import time
+from collections.abc import Mapping
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
@@ -59,24 +61,32 @@ class SignedPolicyBundle:
         )
         self.signatures.append(sig)
     
-    def verify_signatures(self, required_signers: list[str] | None = None) -> bool:
-        """Verify all signatures on the bundle."""
-        if len(self.signatures) < self.requires_signatures:
+    def verify_signatures(self, required_signers: list[str] | None = None, *,
+                          trusted_keys: Mapping[str, str] | None = None) -> bool:
+        """Verify local HMAC signatures against caller-configured trust, never artifact keys.
+
+        This helper is not an authenticated governance or deployment boundary.
+        """
+        if not trusted_keys or self.requires_signatures < 1 or self.is_expired():
             return False
-        
-        if required_signers:
-            signers = {sig.signed_by for sig in self.signatures}
-            if not all(signer in signers for signer in required_signers):
-                return False
-        
+        signers = [sig.signed_by for sig in self.signatures]
+        if (len(set(signers)) != len(signers) or len(signers) < self.requires_signatures
+                or any(not s.strip() for s in signers)):
+            return False
+        if required_signers and not all(signer in signers for signer in required_signers):
+            return False
         bundle_hash = self.content_hash()
-        return all(self._verify_signature(bundle_hash, sig) for sig in self.signatures)
+        return all(sig.signed_by == sig.key_id and sig.algorithm == "sha256"
+                   and self._verify_signature(bundle_hash, sig, trusted_keys.get(sig.key_id))
+                   for sig in self.signatures)
     
-    def _verify_signature(self, data: str, sig: PolicyBundleSignature) -> bool:
+    def _verify_signature(self, data: str, sig: PolicyBundleSignature, key: str | None) -> bool:
         """Verify a single signature."""
         try:
+            if not key:
+                return False
             expected = hmac.new(
-                sig.public_key.encode(),
+                key.encode(),
                 data.encode(),
                 hashlib.sha256,
             ).hexdigest()
@@ -94,7 +104,8 @@ class SignedPolicyBundle:
         """Serialize to dictionary."""
         return {
             "bundle": self.bundle.as_dict(),
-            "signatures": [asdict(sig) for sig in self.signatures],
+            "signatures": [{k: v for k, v in asdict(sig).items() if k != "public_key"}
+                           for sig in self.signatures],
             "version": self.version,
             "requires_signatures": self.requires_signatures,
             "expires_at": self.expires_at,
@@ -133,14 +144,14 @@ class PolicySigner:
     
     def sign(self, bundle: PolicyBundle) -> PolicyBundleSignature:
         """Sign a policy bundle."""
-        data = bundle.content_hash()
+        data = bundle.digest()
         signature = self._create_signature(data)
         
         return PolicyBundleSignature(
             algorithm=self.algorithm,
             signature=signature,
             signed_by=self.key_id,
-            public_key=self.private_key,  # In production, store public key separately
+            public_key="",  # HMAC secrets never belong in serialized verification material.
             key_id=self.key_id,
         )
     
@@ -174,7 +185,7 @@ class CosignSigner:
         # Write bundle to temporary file
         import tempfile
         with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
-            json.dump(bundle.to_dict(), f)
+            json.dump(bundle.as_dict(), f)
             bundle_file = Path(f.name)
         
         try:
@@ -185,7 +196,9 @@ class CosignSigner:
                 str(bundle_file),
             ]
             
-            env = {"COSIGN_PASSWORD": self.password} if self.password else None
+            env = os.environ.copy()
+            if self.password:
+                env["COSIGN_PASSWORD"] = self.password
             
             if self.fulcio_url:
                 cmd.extend(["--fulcio-url", self.fulcio_url])
@@ -201,7 +214,7 @@ class CosignSigner:
         """Verify cosign signature."""
         import tempfile
         with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
-            json.dump(bundle.to_dict(), f)
+            json.dump(bundle.as_dict(), f)
             bundle_file = Path(f.name)
         
         try:
@@ -229,7 +242,7 @@ class NotarySigner:
         """Sign bundle using notary."""
         import tempfile
         with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
-            json.dump(bundle.to_dict(), f)
+            json.dump(bundle.as_dict(), f)
             bundle_file = Path(f.name)
         
         try:
@@ -271,39 +284,7 @@ class SignedPolicyRegistry(PolicyRegistry):
         notary_server: str | None = None,
         notary_repo: str | None = None,
     ):
-        super().__init__(path)
-        self.min_signatures = min_signatures
-        self.trusted_signers = trusted_signers or []
-        self.cosign_signer = CosignSigner(cosign_key) if cosign_key else None
-        self.notary_signer = NotarySigner(notary_server, notary_repo) if notary_server else None
-    
-    def register(self, bundle: PolicyBundle) -> PolicyBundle:
-        """Register a bundle - requires valid signatures."""
-        if isinstance(bundle, SignedPolicyBundle):
-            signed_bundle = bundle
-        else:
-            raise ValueError("Only SignedPolicyBundle can be registered in SignedPolicyRegistry")
-        
-        if not signed_bundle.verify_signatures(self.trusted_signers):
-            raise ValueError("Bundle signatures verification failed")
-        
-        if len(signed_bundle.signatures) < self.min_signatures:
-            raise ValueError(f"Bundle requires at least {self.min_signatures} signatures")
-        
-        if signed_bundle.is_expired():
-            raise ValueError("Bundle has expired")
-        
-        return super().register(signed_bundle.bundle)
-    
-    def activate(self, version: str) -> PolicyBundle:
-        """Activate a bundle version - requires signature verification."""
-        bundle = super().activate(version)
-        if not isinstance(bundle, SignedPolicyBundle):
-            # Wrap existing bundle for signature tracking
-            signed = SignedPolicyBundle(bundle=bundle, requires_signatures=self.min_signatures)
-            if not signed.verify_signatures(self.trusted_signers):
-                raise ValueError(f"Active bundle {version} has invalid signatures")
-        return bundle
+        raise NotImplementedError("external signed-policy governance is unavailable; use the core PolicyRegistry")
 
 
 # --- Version Pinning ---
@@ -328,6 +309,7 @@ class VersionPinner:
             self._load()
     
     def _load(self):
+        assert self.path is not None
         with open(self.path) as f:
             data = json.load(f)
             self.pins = {k: VersionPin(**v) for k, v in data.items()}
@@ -348,7 +330,7 @@ class VersionPinner:
         """Pin a specific version."""
         pin = VersionPin(
             version=version,
-            bundle_hash=bundle.content_hash(),
+            bundle_hash=bundle.digest(),
             pinned_by=pinned_by,
             reason=reason,
         )
@@ -403,6 +385,7 @@ class ExceptionTracker:
             self._load()
     
     def _load(self):
+        assert self.path is not None
         with open(self.path) as f:
             data = json.load(f)
             self.exceptions = {k: PolicyException(**v) for k, v in data.items()}

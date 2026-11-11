@@ -199,6 +199,8 @@ class BackupManager:
                 data = f.read()
             
             if metadata.encrypted:
+                if not self.config.encryption_key:
+                    raise ValueError("encrypted backup requires a configured key")
                 from cryptography.fernet import Fernet
                 key = hashlib.sha256(self.config.encryption_key.encode()).digest()[:32]
                 fernet = Fernet(base64.urlsafe_b64encode(key))
@@ -237,6 +239,8 @@ class BackupManager:
             data = f.read()
         
         if metadata.encrypted:
+            if not self.config.encryption_key:
+                raise ValueError("encrypted backup requires a configured key")
             from cryptography.fernet import Fernet
             key = hashlib.sha256(self.config.encryption_key.encode()).digest()[:32]
             fernet = Fernet(base64.urlsafe_b64encode(key))
@@ -278,11 +282,9 @@ class ReplicationManager:
     
     def start_async_replication(self):
         """Start asynchronous replication loop."""
-        self._running = True
-        import threading
-        self._replication_thread = threading.Thread(target=self._replication_loop, daemon=True)
-        self._replication_thread.start()
+        raise NotImplementedError("ledger replication is unavailable until verified event replay exists")
     
+
     def stop_replication(self):
         """Stop replication."""
         self._running = False
@@ -303,22 +305,9 @@ class ReplicationManager:
         
         Returns number of events replicated.
         """
-        replicated = 0
-        for event in self.primary.events:
-            if event.seq > self._last_replicated_seq:
-                # Append to standby
-                self.standby.append(
-                    event_type=event.event_type,
-                    actor_identity=event.actor_identity,
-                    decision=event.decision,
-                    input_hash=event.input_hash,
-                    policy_digest=event.policy_digest,
-                    detail=event.detail,
-                )
-                self._last_replicated_seq = event.seq
-                replicated += 1
-        return replicated
+        raise NotImplementedError("ledger replication is unavailable until verified event replay exists")
     
+
     def sync_replicate(self) -> int:
         """Synchronous replication - blocks until replicated."""
         return self.replicate_once()
@@ -433,7 +422,7 @@ class Runbook:
     
     def execute(self, dry_run: bool = False) -> dict[str, Any]:
         """Execute the runbook."""
-        results = {
+        results: dict[str, Any] = {
             "runbook": self.name,
             "version": self.version,
             "started_at": time.time(),
@@ -442,7 +431,7 @@ class Runbook:
         }
         
         for step in self.steps:
-            step_result = {
+            step_result: dict[str, Any] = {
                 "step_id": step.step_id,
                 "name": step.name,
                 "started_at": time.time(),
@@ -597,9 +586,9 @@ def dr_backup_cli():
         signing_key = base64.b64decode(args.signing_key)
     else:
         import os
-        signing_key = os.environ.get("MAESTRO_SIGNING_KEY")
-        if signing_key:
-            signing_key = base64.b64decode(signing_key)
+        encoded_key = os.environ.get("MAESTRO_SIGNING_KEY")
+        if encoded_key:
+            signing_key = base64.b64decode(encoded_key)
         else:
             import secrets
             signing_key = secrets.token_bytes(32)

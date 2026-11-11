@@ -1,0 +1,14 @@
+{"python": "3.11.15 (main, May 10 2026, 19:31:25) [MSC v.1944 64 bit (AMD64)]", "executable": "F:\\New folder (4)\\maestro\\.venv\\Scripts\\python.exe"}
+{"module": "pytest", "available": true}
+{"module": "jose", "available": false}
+{"module": "psycopg_pool", "available": false}
+{"module": "temporalio", "available": false}
+{"probe": "invalid_release_gate", "overall_passed": true, "gate_results": [{"gate_name": "impossible", "passed": true, "score": 1.0, "threshold": 2.0, "details": {"simulated": true}}]}
+{"probe": "policy_signer", "result": "AttributeError: 'PolicyBundle' object has no attribute 'content_hash'"}
+{"probe": "duplicate_self_supplied_signatures", "accepted": true, "serialized_contains_hmac_key": true}
+{"probe": "unreachable_control_plane", "healthy": true, "mode": "online"}
+{"probe": "vertical_default_loop", "agent": "coding", "proposed_action": "code_read", "allowed": false, "reason": "critique: revise: task verification failed [mitigation-policy]: mitigation 'code_read' is not an appropriate/safe response to a 'anomaly' alert", "output": {}}
+{"probe": "vertical_default_loop", "agent": "research", "proposed_action": "research_search", "allowed": false, "reason": "critique: revise: task verification failed [mitigation-policy]: mitigation 'research_search' is not an appropriate/safe response to a 'anomaly' alert", "output": {}}
+{"probe": "sandbox_timeout", "configured_seconds": 0.01, "elapsed_seconds": 0.625, "error": "SandboxViolation"}
+{"probe": "effect_before_journal_crash", "side_effect_count": 2}
+{"probe": "citation_negation_and_fake_marker", "verified": true, "reason": "grounded (1.00) with citations"}

@@ -231,7 +231,7 @@ class MemoryInspectResponse(_Model):
 class MemoryPromoteRequest(_Model):
     record_id: str
     capability: str = Field(
-        "cap:memory:promote",
+        default="cap:memory:promote",
         description="the asserted capability; the scoped token is minted "
         "server-side under the OPERATOR role and ledgered")
 

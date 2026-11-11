@@ -8,6 +8,7 @@ implementation shape (``name`` / ``aname``).
 from __future__ import annotations
 
 import os
+from typing import Any
 
 from maestro.sdk.http_client import ControlPlaneClient
 from maestro.sdk.models import (
@@ -444,7 +445,7 @@ class MaestroClient:
     @classmethod
     def from_env(cls, **overrides) -> MaestroClient:
         """Build a client from ``MAESTRO_BASE_URL`` and ``MAESTRO_API_TOKEN``."""
-        kwargs = {
+        kwargs: dict[str, Any] = {
             "base_url": os.environ.get("MAESTRO_BASE_URL", "http://127.0.0.1:8000"),
             "api_key": os.environ.get("MAESTRO_API_TOKEN"),
         }

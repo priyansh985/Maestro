@@ -14,6 +14,8 @@ from typing import TYPE_CHECKING, Any, cast
 import httpx
 from omegaconf import OmegaConf
 
+from maestro.config import config_text
+
 from .registry import ConnectorRegistry
 
 if TYPE_CHECKING:
@@ -46,10 +48,15 @@ def build_registry(
     """
     cfg_path = Path(path) if path is not None else _DEFAULT_CONNECTORS_YAML
     registry = ConnectorRegistry()
-    if not cfg_path.exists():
+    if cfg_path.exists():
+        cfg = cast("DictConfig", OmegaConf.load(cfg_path))
+    elif path is None:
+        try:
+            cfg = cast("DictConfig", OmegaConf.create(config_text("connectors.yaml")))
+        except FileNotFoundError:
+            return default_registry(http_client=http_client)
+    else:
         return default_registry(http_client=http_client)
-
-    cfg = cast("DictConfig", OmegaConf.load(cfg_path))
     entries = OmegaConf.to_container(cfg.get("connectors", []), resolve=True) or []
     default_name = cfg.get("default")
 

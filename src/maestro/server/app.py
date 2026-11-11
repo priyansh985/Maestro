@@ -18,6 +18,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import json
+import os
 import time
 from typing import Any
 
@@ -41,6 +42,14 @@ def create_app(cfg: Any = None) -> FastAPI:
     """Build the FastAPI app. ``cfg`` is an OmegaConf loaded by :mod:`maestro.config`."""
     if cfg is None:
         cfg = load_config()
+    profiles = (cfg_get(cfg, "deployment.profile", "research"),
+                os.environ.get("MAESTRO_PROFILE", "research"))
+    if any(profile not in ("research", "production") for profile in profiles):
+        raise ValueError("unknown deployment profile; expected research or production")
+    if "production" in profiles:
+        raise RuntimeError(
+            "production profile unavailable: durable storage, enrolled identity, trusted "
+            "release evidence and real adapter integrations must be verified first")
     app = FastAPI(title="MAESTRO Network Monitoring Agent (repro of arXiv:2508.10043)")
     threats = load_threats()
     matrix = threat_risk_matrix(threats)

@@ -20,5 +20,11 @@ data/memory/*.json
 
 # Large / non-source artifacts
 *.pdf
-uv.lock
 *.egg-info/
+.venv*/
+.wheel-smoke/
+build/
+dist/
+.superpowers/
+.zcode/
+claude-history/

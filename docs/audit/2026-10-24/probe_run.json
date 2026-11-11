@@ -1,0 +1,14 @@
+{
+  "pid": 16308,
+  "command": [
+    ".venv/Scripts/python.exe",
+    "-u",
+    "docs/audit/2026-10-24/probe_development_state.py"
+  ],
+  "started_utc": "2026-10-24T00:32:42.570Z",
+  "script_sha256": "333c3808d2a7f962d6865413c3b40589ca36c91c036b98f2116aac421e561360",
+  "exit_code": 0,
+  "finished_utc": "2026-10-24T00:34:45.807Z",
+  "stdout_sha256": "8f9df2ef8d19527d994151984fd0ed97b2abdddef33b8c54bd28c0759f48a8da",
+  "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

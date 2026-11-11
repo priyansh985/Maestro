@@ -1,0 +1,17 @@
+{"python": "3.11.15 (main, May 10 2026, 19:31:25) [MSC v.1944 64 bit (AMD64)]", "executable": "F:\\New folder (4)\\maestro\\.venv\\Scripts\\python.exe"}
+{"module": "pytest", "available": true}
+{"module": "jose", "available": true}
+{"module": "psycopg_pool", "available": false}
+{"module": "temporalio", "available": false}
+{"probe": "invalid_release_gate", "overall_passed": false, "gate_results": [{"gate_name": "impossible", "passed": false, "score": 0.0, "threshold": 2.0, "details": {"status": "not_run", "reason": "production evaluation unavailable: real evidence verifier not configured"}}]}
+{"probe": "policy_signer", "result": "returned"}
+{"probe": "duplicate_self_supplied_signatures", "accepted": false, "serialized_contains_hmac_key": false}
+{"probe": "unreachable_control_plane", "healthy": true, "mode": "online"}
+{"probe": "vertical_default_loop", "agent": "coding", "proposed_action": "code_read", "allowed": false, "reason": "critique: revise: task verification failed [mitigation-policy]: mitigation 'code_read' is not an appropriate/safe response to a 'anomaly' alert", "output": {}}
+{"probe": "vertical_default_loop", "agent": "research", "proposed_action": "research_search", "allowed": false, "reason": "critique: revise: task verification failed [mitigation-policy]: mitigation 'research_search' is not an appropriate/safe response to a 'anomaly' alert", "output": {}}
+{"probe": "sandbox_timeout", "configured_seconds": 0.01, "elapsed_seconds": 1.594, "error": "SandboxViolation"}
+{"probe": "effect_before_journal_crash", "side_effect_count": 2}
+{"probe": "citation_negation_and_fake_marker", "verified": true, "reason": "grounded (1.00) with citations"}
+{"probe": "backup_restore_and_integrity", "original_events": 1, "restored_events": 0, "tampered_backup_verified": true}
+{"probe": "sdk_mutating_retry", "server_effect_count": 2}
+{"probe": "new_agent_after_tenant_containment", "create_status": 201, "new_agent_status": "idle", "alert_status": 200, "alert_allowed": true, "isolation_flag": true}

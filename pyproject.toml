@@ -8,7 +8,7 @@ name = "maestro-secure-agentic-ai"
 version = "1.0.0"
 description = "Reproduction of arXiv:2508.10043 - Securing Agentic AI (MAESTRO threat modeling for LLM-based network monitoring agents)"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.12"
 license = {text = "MIT"}
 authors = [{name = "Reproduction"}]
 dependencies = [
@@ -35,6 +35,10 @@ dependencies = [
 openai = ["openai>=1.65.1"]
 agent = ["pydantic-ai>=0.0.30"]
 viz = ["matplotlib>=3.8,<3.11"]
+# Optional helper libraries. Their installation does not enable a production profile.
+oidc = ["python-jose[cryptography]>=3.4,<4"]
+postgres = ["psycopg[binary,pool]>=3.2,<4"]
+dr = ["cryptography>=44,<51"]
 dev = [
     "pytest>=8,<9",
     "pytest-asyncio>=0.23,<0.25",
@@ -42,9 +46,13 @@ dev = [
     "mypy>=1.10,<1.14",
     "types-pyyaml",
     "types-psutil",
+    "build>=1.2,<2",
+    "python-jose[cryptography]>=3.4,<4",
 ]
 
 [project.scripts]
+maestro = "maestro.cli:main"
+maestro-v1-validate = "maestro.scripts.validate_v1:main"
 maestro-validate = "maestro.cli:cli_validate"
 maestro-reproduce = "maestro.experiments.runner:main"
 maestro-audit = "maestro.security.audit:main"
@@ -55,7 +63,7 @@ maestro-bp0-audit = "maestro.scripts.bp0_audit:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-maestro = ["py.typed"]
+maestro = ["py.typed", "server/dashboards/*.html"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -64,7 +72,7 @@ asyncio_default_fixture_loop_scope = "function"
 
 [tool.ruff]
 line-length = 100
-target-version = "py310"
+target-version = "py312"
 
 [tool.ruff.lint]
 extend-select = ["I", "UP", "B", "SIM", "C4"]
@@ -81,7 +89,7 @@ extend-select = ["I", "UP", "B", "SIM", "C4"]
 "src/maestro/server/agents_api.py" = ["B008"]
 
 [tool.mypy]
-python_version = "3.10"
+python_version = "3.12"
 ignore_missing_imports = true
 check_untyped_defs = true
 warn_unused_ignores = true

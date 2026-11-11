@@ -19,6 +19,7 @@ the control loop, ``running`` an agent that has handled at least one alert,
 """
 from __future__ import annotations
 
+import builtins
 import secrets
 import time
 from dataclasses import dataclass, field
@@ -244,7 +245,7 @@ class TenantAgentRegistry:
         record.last_active = time.time()
         return result
 
-    def tenants(self) -> list[str]:
+    def tenants(self) -> builtins.list[str]:
         """Tenant ids that have a fleet (union with the planes registry is the
         control plane's view of known tenants)."""
         return sorted(t for t, fleet in self._fleets.items() if fleet)

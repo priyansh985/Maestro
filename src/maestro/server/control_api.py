@@ -590,8 +590,7 @@ def validate_policy(
         dupes = sorted({i for i in intents if intents.count(i) > 1})
         if dupes:
             warnings.append(f"duplicate intents ignored: {dupes}")
-            seen: list[str] = []
-            intents = [i for i in intents if not (i in seen or seen.append(i))]
+            intents = list(dict.fromkeys(intents))
         unknown = [i for i in intents if i not in INTENT_REGISTRY]
         if unknown:
             errors.append(

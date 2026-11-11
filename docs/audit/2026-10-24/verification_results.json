@@ -1,0 +1,86 @@
+{
+  "audit_date_local": "2026-10-24",
+  "timezone": "Asia/Calcutta",
+  "baseline_head": "fb1425235417879e1af227e691a3676ccedd68c0",
+  "product_source_changes_made": false,
+  "checks": [
+    {
+      "command": [
+        ".venv/Scripts/python.exe",
+        "-m",
+        "pytest",
+        "-q"
+      ],
+      "exit_code": 0,
+      "result": "636 passed",
+      "elapsed_seconds": 1408.14,
+      "output_excerpt": "636 passed in 1408.14s (0:23:28)"
+    },
+    {
+      "command": [
+        ".venv/Scripts/python.exe",
+        "-m",
+        "ruff",
+        "check",
+        "src",
+        "tests",
+        "--output-format",
+        "concise"
+      ],
+      "exit_code": 0,
+      "output_excerpt": "All checks passed!"
+    },
+    {
+      "command": [
+        ".venv/Scripts/python.exe",
+        "-m",
+        "mypy",
+        "src"
+      ],
+      "exit_code": 1,
+      "error_count": 41,
+      "files_with_errors": 8,
+      "source_files_checked": 107,
+      "output_excerpt": "Found 41 errors in 8 files (checked 107 source files)",
+      "error_files": [
+        "src/maestro/security/policy_bundle_signed.py",
+        "src/maestro/dr/disaster_recovery.py",
+        "src/maestro/compliance/export.py",
+        "src/maestro/server/oidc.py",
+        "src/maestro/cli.py",
+        "src/maestro/sdk/client.py",
+        "src/maestro/server/agent_registry.py",
+        "src/maestro/server/control_api.py"
+      ]
+    },
+    {
+      "command": [
+        ".venv/Scripts/python.exe",
+        "-m",
+        "ruff",
+        "check",
+        "docs/audit/2026-10-24/probe_development_state.py"
+      ],
+      "exit_code": 0,
+      "output_excerpt": "All checks passed!"
+    },
+    {
+      "command": [
+        "git",
+        "diff",
+        "--check"
+      ],
+      "exit_code": 0,
+      "scope": "tracked diff"
+    }
+  ],
+  "source_hash_snapshot": "source_hashes.json",
+  "source_hash_snapshot_timing": "Captured after initial probes while pytest was running, then checked again after completion; no product edits.",
+  "hashed_inputs": 182,
+  "hash_changes_after_snapshot": [],
+  "planning_review": {
+    "scope": "M0 builder clarity check",
+    "result": "nothing important left"
+  },
+  "production_readiness": "not_assessed"
+}

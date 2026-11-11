@@ -4,6 +4,25 @@ All notable changes to MAESTRO are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versioning follows SemVer.
 
+## Unreleased — enterprise foundation (30 October 2026)
+
+- Production release evaluation denies admission until real evidence verification
+  exists; explicit simulation cannot grant admission. Production startup remains
+  unavailable during E0.
+- Offline validation collects real command outcomes, source/log hashes and
+  unassessed integrations instead of declaring release readiness.
+- Repair helper interfaces and refuse unfinished external signed-policy registry
+  and replication operations. Compliance exports no longer invent test results.
+- Configure Python 3.12/3.13 verification, installable scripts and packaged defaults.
+  Clean installs, full checks and image verification remain subject to the
+  [dated E0 status report](docs/audit/2026-10-30-e0-status.md).
+
+**Correction to the historical release below:** the October 24 audit reproduced
+636 passing tests but 41 mypy errors. Listed enterprise modules were scaffolding
+or offline helpers; their presence did not prove real OIDC, database isolation,
+OS sandboxing, recovery or production readiness. Historical test counts are not
+evidence for the current working tree.
+
 ## [1.0.0] - 2026-10-18
 
 First release-candidate-quality definition of MAESTRO: a 7-layer threat-modeling

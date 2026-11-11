@@ -28,6 +28,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from maestro import __version__
 from maestro.scripts.validate_threats import main as validate_main
 
 
@@ -71,7 +72,7 @@ def _resolve_api_key(args: argparse.Namespace) -> str | None:
     return None
 
 
-def _client_from_args(args: argparse.Namespace):  # type: ignore[no-untyped-def]
+def _client_from_args(args: argparse.Namespace):
     from maestro.sdk.http_client import ControlPlaneClient
 
     base_url = _resolve_base_url(args)
@@ -511,7 +512,7 @@ def _build_parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
 
     # Global options
-    parser.add_argument("--version", action="version", version="0.9.0")
+    parser.add_argument("--version", action="version", version=__version__)
 
     # Agent commands
     agent_parser = subparsers.add_parser("agent", help="Agent lifecycle management")

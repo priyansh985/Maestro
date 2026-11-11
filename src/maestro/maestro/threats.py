@@ -12,7 +12,7 @@ from typing import cast
 
 from omegaconf import DictConfig, OmegaConf
 
-from ..config import _REPO_ROOT
+from ..config import config_text
 from .risk_score import RiskComponents, risk_score_components
 
 
@@ -41,8 +41,8 @@ class Threat:
 
 def load_threats(path: str | Path | None = None) -> list[Threat]:
     """Load threats from ``configs/threats.yaml``."""
-    p = Path(path) if path is not None else _REPO_ROOT / "configs" / "threats.yaml"
-    cfg = cast(DictConfig, OmegaConf.load(p))
+    cfg = cast(DictConfig, OmegaConf.load(Path(path)) if path is not None
+               else OmegaConf.create(config_text("threats.yaml")))
     out: list[Threat] = []
     for entry in cfg["threats"]:
         t = Threat(

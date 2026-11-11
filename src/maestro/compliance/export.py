@@ -116,7 +116,7 @@ class ComplianceExporter:
                     control_id="CTRL-L5-01",
                     evidence_type="ledger",
                     description=f"Ledger event: {event.event_type}",
-                    timestamp=event.timestamp,
+                    timestamp=event.timestamp_utc,
                     source="audit_ledger",
                     data=event.__dict__,
                 ))
@@ -182,9 +182,9 @@ class ComplianceExporter:
     def _ledger_summary(self) -> dict[str, Any]:
         """Generate ledger summary statistics."""
         events = list(self.ledger.events)
-        by_type = {}
-        by_decision = {}
-        by_actor = {}
+        by_type: dict[str, int] = {}
+        by_decision: dict[str, int] = {}
+        by_actor: dict[str, int] = {}
         
         for event in events:
             by_type[event.event_type] = by_type.get(event.event_type, 0) + 1
@@ -203,31 +203,9 @@ class ComplianceExporter:
     
     def _collect_test_results(self) -> dict[str, Any]:
         """Collect test results (placeholder - would integrate with pytest)."""
-        return {
-            "test_suite": "maestro",
-            "last_run": time.time(),
-            "total_tests": 600,
-            "passed": 600,
-            "failed": 0,
-            "adversarial_tests": {
-                "tc1_dos": "passed",
-                "tc2_memory_poisoning": "passed",
-                "tc3_direct_injection": "passed",
-                "tc4_indirect_injection": "passed",
-                "tc5_tool_argument_smuggling": "passed",
-                "tc6_confused_deputy": "passed",
-                "tc7_connector_compromise": "passed",
-                "tc8_data_exfiltration": "passed",
-                "tc9_rogue_delegation": "passed",
-                "tc10_log_tampering": "passed",
-                "tc11_rollback_attack": "passed",
-                "tc12_cross_tenant_leak": "passed",
-                "tc13_unsafe_code_exec": "passed",
-                "tc14_model_supply_chain": "passed",
-                "tc15_multi_agent_collusion": "passed",
-            },
-        }
+        return {"status": "not_assessed", "reason": "no verified test-run evidence supplied"}
     
+
     def _collect_config_snapshot(self) -> dict[str, Any]:
         """Collect configuration snapshot."""
         return {
@@ -304,11 +282,11 @@ def compliance_export_cli():
     else:
         import os
         import secrets
-        signing_key = os.environ.get("MAESTRO_SIGNING_KEY")
-        signing_key = base64.b64decode(signing_key) if signing_key else secrets.token_bytes(32)
+        encoded_key = os.environ.get("MAESTRO_SIGNING_KEY")
+        signing_key = base64.b64decode(encoded_key) if encoded_key else secrets.token_bytes(32)
     
     # Load config
-    config = {}
+    config: dict[str, Any] = {}
     if args.config:
         import yaml
         with open(args.config) as f:

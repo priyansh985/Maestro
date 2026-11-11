@@ -98,7 +98,7 @@ class OIDCClient:
         jwks_cache_ttl: int = 3600,
     ):
         self.config = config
-        self._http = http_client or httpx.Client(timeout=30.0)
+        self._http: httpx.Client | None = http_client or httpx.Client(timeout=30.0)
         self._jwks_cache = JWKSCache(ttl=jwks_cache_ttl)
         self._owns_http = http_client is None
     
@@ -112,13 +112,25 @@ class OIDCClient:
     
     def __exit__(self, *args) -> None:
         self.close()
+
+    @property
+    def http(self) -> httpx.Client:
+        if self._http is None:
+            raise OIDCError("OIDC client is closed")
+        return self._http
+
+    def _endpoint(self, name: str) -> str:
+        endpoint = getattr(self.config, name)
+        if not isinstance(endpoint, str) or not endpoint:
+            raise OIDCError(f"missing OIDC endpoint: {name}")
+        return endpoint
     
     # --- JWKS Management ---
     
     def fetch_jwks(self) -> list[dict]:
         """Fetch JWKS from provider."""
         try:
-            response = self._http.get(self.config.jwks_uri)
+            response = self.http.get(self._endpoint("jwks_uri"))
             response.raise_for_status()
             jwks = response.json()
             self._jwks_cache.keys = jwks.get("keys", [])
@@ -202,8 +214,8 @@ class OIDCClient:
         }
         
         try:
-            response = self._http.post(
-                self.config.token_endpoint,
+            response = self.http.post(
+                self._endpoint("token_endpoint"),
                 data=data,
                 headers={"Content-Type": "application/x-www-form-urlencoded"},
             )
@@ -223,8 +235,8 @@ class OIDCClient:
         }
         
         try:
-            response = self._http.post(
-                self.config.token_endpoint,
+            response = self.http.post(
+                self._endpoint("token_endpoint"),
                 data=data,
                 headers={"Content-Type": "application/x-www-form-urlencoded"},
             )
@@ -246,7 +258,7 @@ class OIDCClient:
         }
         
         try:
-            response = self._http.post(
+            response = self.http.post(
                 revocation_endpoint,
                 data=data,
                 headers={"Content-Type": "application/x-www-form-urlencoded"},
@@ -258,8 +270,8 @@ class OIDCClient:
     def get_userinfo(self, access_token: str) -> dict:
         """Get user info from UserInfo endpoint."""
         try:
-            response = self._http.get(
-                self.config.userinfo_endpoint,
+            response = self.http.get(
+                self._endpoint("userinfo_endpoint"),
                 headers={"Authorization": f"Bearer {access_token}"},
             )
             response.raise_for_status()
@@ -315,7 +327,7 @@ class OIDCAuthService:
         }
         self.role_mapping = role_mapping or {}
         self.default_role = default_role
-        self._auth_service = AuthService(key=b"oidc-session-key")  # Separate key for sessions
+        self._auth_service = AuthService()  # Explicit configured key; never a hardcoded session key.
     
     def authenticate_id_token(self, id_token: str, nonce: str | None = None) -> Principal:
         """Validate ID token and create Principal."""
@@ -329,10 +341,15 @@ class OIDCAuthService:
     
     def _map_claims_to_principal(self, claims: dict) -> Principal:
         """Map OIDC claims to MAESTRO Principal."""
-        subject = claims.get(self.claim_mapping.get("sub", "sub"), claims.get("sub", "unknown"))
-        email = claims.get(self.claim_mapping.get("email", "email"))
-        username = claims.get(self.claim_mapping.get("preferred_username", "preferred_username"))
+        subject = claims.get(self.claim_mapping.get("sub", "sub"), claims.get("sub"))
+        tenant = claims.get(self.claim_mapping.get("tenant", "tenant"))
+        if not isinstance(subject, str) or not subject.strip():
+            raise ClaimMappingError("verified identity requires a nonempty subject")
+        if not isinstance(tenant, str) or not tenant.strip():
+            raise ClaimMappingError("verified identity requires an explicit tenant")
         groups = claims.get(self.claim_mapping.get("groups", "groups"), [])
+        if not isinstance(groups, list) or not all(isinstance(g, str) for g in groups):
+            raise ClaimMappingError("groups must be a list of strings")
         
         # Determine role from groups
         role = self.default_role
@@ -347,11 +364,9 @@ class OIDCAuthService:
         
         return Principal(
             subject=subject,
-            tenant=claims.get("tenant", "default"),
+            tenant=tenant,
             role=role,
-            email=email,
-            username=username,
-            groups=groups,
+            kind="user",
         )
     
     def issue_session_token(self, principal: Principal, ttl_seconds: int = 3600) -> str:

@@ -6,6 +6,7 @@ A gate bundle defines the criteria an agent must pass before deployment.
 from __future__ import annotations
 
 import hashlib
+import hmac
 import json
 import time
 from dataclasses import asdict, dataclass, field
@@ -59,13 +60,15 @@ class GateBundleResult:
     overall_passed: bool
     gate_results: tuple[GateResult, ...]
     evaluated_at: float = field(default_factory=time.time)
+    simulated: bool = False
+    reason: str = ""
     
     @property
     def required_gates_passed(self) -> bool:
         """True if all required gates passed."""
-        # Need to check against the bundle's gates, but we don't have the bundle here
-        # For now, assume all gates in gate_results are required
-        return all(r.passed for r in self.gate_results)
+        # Empty bundles and hypothetical scores are never admission evidence.
+        return (self.overall_passed and not self.simulated and bool(self.gate_results)
+                and all(r.passed for r in self.gate_results))
 
 
 class GateRegistry:
@@ -152,39 +155,42 @@ class GateRegistry:
 
 
 class ReleaseGateEvaluator:
-    """Evaluates an agent against a gate bundle."""
+    """Fail-closed admission boundary until real evidence verification exists.
+
+    Registering a bundle is not evidence that its gates ran, its signature was
+    trusted, or the evaluated source matches it. E0 intentionally disables
+    admission; E1/E2 must supply the real verification and trust integrations.
+    """
     
     def __init__(self, registry: GateRegistry) -> None:
         self._registry = registry
     
     def evaluate(self, agent_spec: Any, bundle_version: str | None = None) -> GateBundleResult:
-        """Evaluate an agent spec against the active (or specified) gate bundle."""
+        """Return an explicit denial: no real release verifier is configured."""
         bundle = self._registry.active() if bundle_version is None else self._registry.get(bundle_version)
         if bundle is None:
             raise ValueError("No active gate bundle")
-        
-        # In production, this would run the actual evaluations
-        # For now, return simulated results
-        gate_results = []
-        for gate in bundle.gates:
-            # Simulate gate evaluation
-            passed = True  # Would be actual evaluation
-            score = 1.0
-            gate_results.append(GateResult(
-                gate_name=gate.name,
-                passed=passed,
-                score=score,
-                threshold=gate.threshold,
-                details={"simulated": True}
-            ))
-        
-        overall = all(r.passed for r in gate_results if 
-                     any(g.required for g in bundle.gates if g.name == r.gate_name))
-        
+        reason = "production evaluation unavailable: real evidence verifier not configured"
         return GateBundleResult(
             bundle_version=bundle.version,
-            overall_passed=overall,
-            gate_results=tuple(gate_results),
+            overall_passed=False,
+            gate_results=tuple(GateResult(g.name, False, 0.0, g.threshold,
+                               {"status": "not_run", "reason": reason}) for g in bundle.gates),
+            reason=reason,
+        )
+
+    def simulate(self, agent_spec: Any, bundle_version: str | None = None) -> GateBundleResult:
+        """Inspect hypothetical scores offline; never grant release admission."""
+        bundle = self._registry.active() if bundle_version is None else self._registry.get(bundle_version)
+        if bundle is None:
+            raise ValueError("No active gate bundle")
+        return GateBundleResult(
+            bundle_version=bundle.version,
+            overall_passed=False,
+            gate_results=tuple(GateResult(g.name, True, 1.0, g.threshold,
+                               {"simulated": True}) for g in bundle.gates),
+            simulated=True,
+            reason="hypothetical simulation only; not release evidence",
         )
 
 
@@ -198,14 +204,9 @@ def create_gate_bundle(
     expires_at: float = 0.0,
 ) -> GateBundle:
     """Create a signed gate bundle."""
-    # Load key - use environment default if not provided
-    if signing_key is not None:
-        key = _load_key(signing_key)
-    else:
-        # Use a default key for testing - in production, MAESTRO_SIGNING_KEY must be set
-        import os
-        env_key = os.environ.get("MAESTRO_SIGNING_KEY")
-        key = _load_key(env_key) if env_key else b"test-signing-key-" + b"0" * 48
+    if not approver1.strip() or not approver2.strip() or approver1.strip() == approver2.strip():
+        raise ValueError("two distinct nonempty approvers are required")
+    key = _load_key(signing_key)
     
     bundle = GateBundle(
         version=version,
@@ -227,7 +228,7 @@ def create_gate_bundle(
         "created_at": bundle.created_at,
     }, sort_keys=True, separators=(",", ":")).encode("utf-8")
     
-    signature = hashlib.sha256(key + payload).hexdigest()
+    signature = hmac.new(key, payload, hashlib.sha256).hexdigest()
     bundle = GateBundle(
         version=bundle.version,
         agent_spec_hash=bundle.agent_spec_hash,

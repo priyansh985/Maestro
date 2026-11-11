@@ -196,17 +196,17 @@ class TestCreateGateBundle:
         assert bundle.signature != ""
         assert bundle.signed_by == ("alice", "bob")
 
-    def test_create_gate_bundle_no_key(self):
-        """Created bundle works without explicit signing key."""
+    def test_create_gate_bundle_requires_a_configured_key(self, monkeypatch):
+        """A missing key cannot silently produce a test-key signature."""
+        monkeypatch.delenv("MAESTRO_SIGNING_KEY", raising=False)
         gates = [Gate("test_gate", "Test gate", 0.8)]
-        bundle = create_gate_bundle(
-            version="1.0.0",
-            agent_spec_hash="spec123",
-            gates=gates,
-            approver1="alice",
-            approver2="bob",
-        )
-        assert bundle.signature != ""
+        with pytest.raises(Exception, match="signing key"):
+            create_gate_bundle("1.0.0", "spec123", gates, "alice", "bob")
+
+    @pytest.mark.parametrize("approvers", [("alice", "alice"), ("", "bob"), ("alice", " ")])
+    def test_bundle_creation_requires_distinct_nonempty_approvers(self, approvers):
+        with pytest.raises(ValueError, match="approver"):
+            create_gate_bundle("1", "spec", [], *approvers, signing_key=b"test-key")
 
 
 class TestReleaseGateEvaluator:
@@ -261,6 +261,36 @@ class TestDefaultGates:
         assert "citation_grounding" in gate_names
         assert "safety_envelope" in gate_names
         assert "ledger_integrity" in gate_names
+
+
+@pytest.mark.parametrize("case", ["missing_runner", "expired", "invalid_signature",
+                                 "wrong_spec", "empty", "advisory_only", "invalid_threshold"])
+def test_unavailable_production_evaluation_never_admits(case):
+    """Neither invalid bundles nor a missing verifier can manufacture admission."""
+    registry = GateRegistry()
+    gates = () if case == "empty" else (
+        Gate("required_check", "No real runner configured",
+             2.0 if case == "invalid_threshold" else 1.0,
+             required=case != "advisory_only"),
+    )
+    bundle = GateBundle("audit", "expected-spec", gates, signature="not-a-valid-signature",
+                        signed_by=("same", "same"), expires_at=1.0 if case == "expired" else 0)
+    registry.register(bundle)
+    result = ReleaseGateEvaluator(registry).evaluate(
+        {"spec": "different" if case == "wrong_spec" else "expected-spec"}, "audit")
+    assert result.overall_passed is False
+    assert result.required_gates_passed is False
+    assert not any(g.passed for g in result.gate_results)
+
+
+def test_explicit_simulation_never_grants_production_admission():
+    registry = GateRegistry()
+    registry.register(GateBundle("simulation", "spec", (Gate("example", "desc", 0.8),)))
+    result = ReleaseGateEvaluator(registry).simulate(agent_spec=None, bundle_version="simulation")
+    assert result.simulated is True
+    assert result.overall_passed is False
+    assert result.required_gates_passed is False
+    assert all(g.details["simulated"] is True for g in result.gate_results)
 
 
 if __name__ == "__main__":

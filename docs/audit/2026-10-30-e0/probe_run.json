@@ -1,0 +1,14 @@
+{
+  "command": [
+    ".venv/Scripts/python.exe",
+    "docs/audit/2026-10-24/probe_development_state.py"
+  ],
+  "exit_code": 0,
+  "python": {
+    "python": "3.11.15 (main, May 10 2026, 19:31:25) [MSC v.1944 64 bit (AMD64)]",
+    "executable": "F:\\New folder (4)\\maestro\\.venv\\Scripts\\python.exe"
+  },
+  "probes": 12,
+  "source_hashes_collected_after_run": true,
+  "readiness": "not_assessed"
+}
