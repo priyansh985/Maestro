@@ -54,6 +54,23 @@ SandboxOutput = tuple[dict, bool]
 #: Journal sequence used for a single-activity "run" keyed by idempotency key.
 _SEQ = 0
 
+#: Wall-clock bound applied when a policy opts into external mode without an
+#: explicit timeout. The guest is killed by the runtime on expiry.
+_EXTERNAL_TIMEOUT_S = 30.0
+
+#: Code executed inside the guest. It can only see the read-only input mount;
+#: its stdout is parsed by the host and re-confined by ``_confine``.
+_GUEST_CODE = """
+import json, importlib
+with open('/input.json') as f:
+    data = json.load(f)
+module = importlib.import_module(data['adapter_module'])
+adapter = getattr(module, data['adapter_name'])
+from maestro.security.action import ActionProposal
+proposal = ActionProposal(**data['proposal'])
+print(json.dumps(adapter(proposal)))
+"""
+
 
 class SandboxViolation(Exception):
     """The adapter breached the sandbox policy. Always fails closed (deny)."""
@@ -184,15 +201,40 @@ class ExecutionSandbox:
         else:
             raise SandboxViolation(f"Unknown sandbox type: {self._policy.sandbox_type}")
 
+    def _run_external(self, cmd: list[str], *, runtime: str, binary: str) -> dict:
+        """Run an external command and parse one JSON object from its stdout.
+
+        Every failure mode fails closed as :class:`SandboxViolation`: a missing
+        runtime, a timeout, a non-zero exit and unparseable output are denied
+        (and audited by :meth:`run`) instead of leaking an OS/JSON error into
+        the live loop.
+        """
+        timeout = self._policy.timeout_s or _EXTERNAL_TIMEOUT_S
+        try:
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+        except FileNotFoundError as exc:
+            raise SandboxViolation(
+                f"{runtime} runtime not found: install '{binary}' to use external sandbox mode"
+            ) from exc
+        except subprocess.TimeoutExpired as exc:
+            raise SandboxViolation(f"{runtime} execution timed out after {timeout}s") from exc
+        except OSError as exc:
+            raise SandboxViolation(f"{runtime} runtime could not be started: {exc}") from exc
+        if result.returncode != 0:
+            raise SandboxViolation(f"{runtime} execution failed: {result.stderr}")
+        try:
+            return json.loads(result.stdout.strip())
+        except (TypeError, ValueError) as exc:
+            raise SandboxViolation(f"{runtime} returned non-JSON output: {exc}") from exc
+
     def _run_docker(self, adapter_data: dict) -> dict:
         """Execute adapter in Docker container with strict isolation."""
-        # Write adapter data to temp file
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
             json.dump(adapter_data, f)
             input_file = f.name
 
         try:
-            # Run container with: no network, read-only fs, no new privs, memory limit
+            # No network, read-only fs, no new privileges and hard resource caps.
             cmd = [
                 "docker", "run", "--rm", "-i",
                 "--network=none",
@@ -203,35 +245,15 @@ class ExecutionSandbox:
                 "--pids-limit=64",
                 "-v", f"{input_file}:/input.json:ro",
                 self._policy.sandbox_image,
-                "python", "-c", """
-import json, sys, importlib
-with open('/input.json') as f:
-    data = json.load(f)
-module = importlib.import_module(data['adapter_module'])
-adapter = getattr(module, data['adapter_name'])
-from maestro.security.action import ActionProposal
-proposal = ActionProposal(**data['proposal'])
-result = adapter(proposal)
-print(json.dumps(result))
-"""
+                "python", "-c", _GUEST_CODE,
             ]
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                timeout=self._policy.timeout_s or 30
-            )
-            if result.returncode != 0:
-                raise SandboxViolation(f"Docker execution failed: {result.stderr}")
-            return json.loads(result.stdout.strip())
-
+            return self._run_external(cmd, runtime="Docker", binary="docker")
         finally:
             os.unlink(input_file)
 
     def _run_gvisor(self, adapter_data: dict) -> dict:
         """Execute adapter via gVisor (runsc)."""
-        # Similar to Docker but using runsc
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
             json.dump(adapter_data, f)
             input_file = f.name
 
@@ -244,28 +266,9 @@ print(json.dumps(result))
                 "--cpus=0.5",
                 "-v", f"{input_file}:/input.json:ro",
                 self._policy.sandbox_image,
-                "python", "-c", """
-import json, sys, importlib
-with open('/input.json') as f:
-    data = json.load(f)
-module = importlib.import_module(data['adapter_module'])
-adapter = getattr(module, data['adapter_name'])
-from maestro.security.action import ActionProposal
-proposal = ActionProposal(**data['proposal'])
-result = adapter(proposal)
-print(json.dumps(result))
-"""
+                "python", "-c", _GUEST_CODE,
             ]
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                timeout=self._policy.timeout_s or 30
-            )
-            if result.returncode != 0:
-                raise SandboxViolation(f"gVisor execution failed: {result.stderr}")
-            return json.loads(result.stdout.strip())
-
+            return self._run_external(cmd, runtime="gVisor", binary="runsc")
         finally:
             os.unlink(input_file)
 
