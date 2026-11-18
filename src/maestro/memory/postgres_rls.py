@@ -5,8 +5,130 @@ connection pooling, and prepared statements.
 """
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from pathlib import Path
+
+# A dollar-quote opener: $$ or $tag$ where tag is an unquoted identifier.
+_DOLLAR_QUOTE = re.compile(r"\$([A-Za-z_][A-Za-z_0-9]*)?\$")
+
+
+def split_sql_statements(sql: str) -> list[str]:
+    """Split a SQL script into individual statements.
+
+    A plain ``sql.split(";")`` corrupts the RLS migration: semicolons appear
+    inside single-quoted literals, dollar-quoted PL/pgSQL bodies (``$$ ... $$``)
+    and comments. Comments are stripped from the result and empty statements
+    are dropped, so each returned string is a single executable statement.
+
+    Recognised contexts: single quotes (with SQL ``''`` escapes and backslash
+    escapes for ``E'...'`` strings), double-quoted identifiers, dollar-quoted
+    strings with optional tags, ``--`` line comments and (nested) ``/* */``
+    block comments.
+    """
+    statements: list[str] = []
+    buffer: list[str] = []
+    i = 0
+    length = len(sql)
+    dollar_tag: str | None = None
+    block_depth = 0
+
+    while i < length:
+        char = sql[i]
+
+        if dollar_tag is not None:
+            if sql.startswith(dollar_tag, i):
+                buffer.append(dollar_tag)
+                i += len(dollar_tag)
+                dollar_tag = None
+            else:
+                buffer.append(char)
+                i += 1
+            continue
+
+        if block_depth:
+            if sql.startswith("/*", i):
+                block_depth += 1
+                i += 2
+            elif sql.startswith("*/", i):
+                block_depth -= 1
+                i += 2
+            else:
+                if char == "\n":
+                    buffer.append(char)
+                i += 1
+            continue
+
+        if sql.startswith("--", i):
+            i += 2
+            while i < length and sql[i] != "\n":
+                i += 1
+            continue
+
+        if sql.startswith("/*", i):
+            block_depth = 1
+            i += 2
+            continue
+
+        if char == "'":
+            buffer.append(char)
+            i += 1
+            while i < length:
+                if sql[i] == "\\" and i + 1 < length:
+                    buffer.append(sql[i : i + 2])
+                    i += 2
+                elif sql[i] == "'":
+                    buffer.append("'")
+                    i += 1
+                    if i < length and sql[i] == "'":
+                        buffer.append("'")
+                        i += 1
+                        continue
+                    break
+                else:
+                    buffer.append(sql[i])
+                    i += 1
+            continue
+
+        if char == '"':
+            buffer.append(char)
+            i += 1
+            while i < length:
+                if sql[i] == '"':
+                    buffer.append('"')
+                    i += 1
+                    if i < length and sql[i] == '"':
+                        buffer.append('"')
+                        i += 1
+                        continue
+                    break
+                buffer.append(sql[i])
+                i += 1
+            continue
+
+        if char == "$":
+            match = _DOLLAR_QUOTE.match(sql, i)
+            if match is not None:
+                dollar_tag = match.group(0)
+                buffer.append(dollar_tag)
+                i = match.end()
+                continue
+
+        if char == ";":
+            statement = "".join(buffer).strip()
+            if statement:
+                statements.append(statement)
+            buffer = []
+            i += 1
+            continue
+
+        buffer.append(char)
+        i += 1
+
+    statement = "".join(buffer).strip()
+    if statement:
+        statements.append(statement)
+    return statements
 
 
 @dataclass
@@ -262,21 +384,16 @@ class PostgresRLSManager:
         
         Returns list of executed statements.
         """
-        pool = self.get_pool()
-        executed = []
-        
-        statements = [
-            stmt.strip()
-            for stmt in MIGRATION_SQL.split(";")
-            if stmt.strip() and not stmt.strip().startswith("--")
-        ]
-        
+        executed: list[str] = []
+        statements = split_sql_statements(MIGRATION_SQL)
+
         for stmt in statements:
             if dry_run:
+                # A dry run only inspects SQL; it must not require a DB driver.
                 executed.append(f"[DRY RUN] {stmt[:100]}...")
                 continue
 
-            with pool.connection() as conn, conn.cursor() as cur:
+            with self.get_pool().connection() as conn, conn.cursor() as cur:
                 cur.execute(stmt)
                 conn.commit()
                 executed.append(stmt[:100] + "...")
@@ -285,21 +402,16 @@ class PostgresRLSManager:
 
     def rollback(self, dry_run: bool = False) -> list[str]:
         """Rollback RLS migration."""
-        pool = self.get_pool()
-        executed = []
-        
-        statements = [
-            stmt.strip()
-            for stmt in ROLLBACK_SQL.split(";")
-            if stmt.strip() and not stmt.strip().startswith("--")
-        ]
-        
+        executed: list[str] = []
+        statements = split_sql_statements(ROLLBACK_SQL)
+
         for stmt in statements:
             if dry_run:
+                # A dry run only inspects SQL; it must not require a DB driver.
                 executed.append(f"[DRY RUN] {stmt[:100]}...")
                 continue
 
-            with pool.connection() as conn, conn.cursor() as cur:
+            with self.get_pool().connection() as conn, conn.cursor() as cur:
                 cur.execute(stmt)
                 conn.commit()
                 executed.append(stmt[:100] + "...")
