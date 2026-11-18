@@ -17,6 +17,12 @@ from .embedding import Embedder, LexicalEmbedder, cosine, information_density
 from .engine import HMDCEngine, compare_pairwise
 from .guardrails import DEFAULT_FORBIDDEN_PATTERNS, deterministic_guardrails
 from .judge import Judge, RubricJudge
+from .judge_connector import (
+    ConnectorJudgeError,
+    JudgeConnector,
+    PerimeterJudgeConnector,
+    safe_connector_judge,
+)
 from .types import (
     Candidate,
     CritiqueResult,
@@ -37,7 +43,11 @@ __all__ = [
     "GuardrailResult",
     "HMDCEngine",
     "Judge",
+    "JudgeConnector",
     "JudgeScore",
+    "ConnectorJudgeError",
+    "PerimeterJudgeConnector",
+    "safe_connector_judge",
     "LexicalEmbedder",
     "RubricCriterion",
     "RubricJudge",
