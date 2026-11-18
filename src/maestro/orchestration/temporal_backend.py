@@ -5,9 +5,11 @@ and a TemporalWorkflow that wraps the local DurableEngine for production deploym
 """
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from datetime import timedelta
 from pathlib import Path
+from typing import Any
 
 from ..orchestration.journal import ActivityRecord, Journal, JournalError
 
@@ -29,6 +31,94 @@ except ImportError:
 class TemporalNotAvailableError(RuntimeError):
     """Raised when Temporal-backed features are used but temporalio is not installed."""
     pass
+
+
+def _decode_payload(data: Any) -> Any:
+    """Decode a Temporal payload's raw bytes into a JSON-friendly Python value.
+
+    Temporal stores payload bytes; the offline journal stores Python objects. A
+    small JSON codec keeps the two representations interchangeable without
+    importing ``temporalio`` (which is optional).
+    """
+    if data is None:
+        return None
+    raw = data.decode("utf-8", errors="replace") if isinstance(data, bytes) else str(data)
+    try:
+        return json.loads(raw)
+    except (TypeError, ValueError):
+        return raw
+
+
+def _header_idempotency_key(header: Any) -> str | None:
+    """Read the optional ``idempotency_key`` header from a scheduled event."""
+    fields = getattr(header, "fields", None)
+    if not isinstance(fields, dict):
+        return None
+    field = fields.get("idempotency_key")
+    if field is None:
+        return None
+    value = _decode_payload(getattr(field, "data", None))
+    return str(value) if value is not None else None
+
+
+def _payloads_to_result(payloads: Any) -> Any:
+    """The first payload of a completed activity, decoded (or ``None``)."""
+    if not payloads:
+        return None
+    return _decode_payload(getattr(payloads[0], "data", None))
+
+
+def _records_from_history(run_id: str, history: Any) -> list[ActivityRecord]:
+    """Translate a Temporal workflow history into append-only journal records.
+
+    Scheduled events fix the deterministic sequence (matching ``ctx.activity``
+    ordering in the offline engine); completed/failed events become the durable
+    outcomes. Activities carrying the same idempotency key collapse to one
+    record, so retry/duplicate events cannot double-journal a side effect.
+    """
+    events = getattr(history, "events", None)
+    if events is None:
+        events = history if isinstance(history, list | tuple) else ()
+    scheduled: dict[int, tuple[int, str, str | None]] = {}
+    seen_keys: set[str] = set()
+    records: list[ActivityRecord] = []
+    seq = 0
+    for event in events:
+        schedule = getattr(event, "activity_task_scheduled_event_attributes", None)
+        if schedule is not None:
+            event_id = int(getattr(event, "event_id", 0) or 0)
+            activity_type = getattr(schedule, "activity_type", None)
+            name = str(getattr(activity_type, "name", "") or "")
+            scheduled[event_id] = (seq, name, _header_idempotency_key(
+                getattr(schedule, "header", None)))
+            seq += 1
+
+        completed = getattr(event, "activity_task_completed_event_attributes", None)
+        if completed is not None:
+            info = scheduled.get(int(getattr(completed, "scheduled_event_id", 0) or 0))
+            if info is not None:
+                seq_no, name, key = info
+                if key is None or key not in seen_keys:
+                    if key is not None:
+                        seen_keys.add(key)
+                    result = _payloads_to_result(
+                        getattr(getattr(completed, "result", None), "payloads", None))
+                    records.append(ActivityRecord(
+                        run_id, seq_no, name, "completed", result, "", 1))
+
+        failed = getattr(event, "activity_task_failed_event_attributes", None)
+        if failed is not None:
+            info = scheduled.get(int(getattr(failed, "scheduled_event_id", 0) or 0))
+            if info is not None:
+                seq_no, name, key = info
+                if key is None or key not in seen_keys:
+                    if key is not None:
+                        seen_keys.add(key)
+                    failure = getattr(failed, "failure", None)
+                    message = str(getattr(failure, "message", failure) or "")
+                    records.append(ActivityRecord(
+                        run_id, seq_no, name, "failed", None, message, 1))
+    return records
 
 
 @dataclass(frozen=True)
@@ -70,12 +160,17 @@ class TemporalJournal(Journal):
             )
         return self._client
     
-    def _fetch_workflow_history(self, run_id: str) -> list[ActivityRecord]:
-        """Fetch activity records from Temporal workflow history."""
-        # In a real implementation, this would query Temporal's event history
-        # for the workflow run and extract activity completion/failure events.
-        # For now, return cached records.
-        return [r for (rid, _), r in self._records_cache.items() if rid == run_id]
+    async def _fetch_workflow_history(self, run_id: str) -> list[ActivityRecord]:
+        """Fetch activity records from Temporal's workflow event history.
+
+        The workflow id is the journal's ``run_id``. The client may be a real
+        ``temporalio.Client`` or a test double — either way history, not the
+        private cache, is the source of truth for replay.
+        """
+        client = await self._ensure_client()
+        handle = client.get_workflow_handle(workflow_id=run_id)
+        history = await handle.fetch_history()
+        return _records_from_history(run_id, history)
     
     def lookup(self, run_id: str, seq: int) -> ActivityRecord | None:
         """Look up an activity outcome from Temporal history."""
@@ -105,13 +200,19 @@ class TemporalJournal(Journal):
         return len(self._records_cache)
     
     async def sync_from_temporal(self, run_id: str) -> int:
-        """Sync local cache from Temporal workflow history.
-        
-        Returns number of records synced.
+        """Rebuild the local replay cache from Temporal workflow history.
+
+        Returns the number of newly journaled records (a re-sync adds none,
+        preserving the journal's append-only, exactly-once contract).
         """
-        # This would query Temporal's event history in production
-        # For now, no-op
-        return 0
+        added = 0
+        for rec in await self._fetch_workflow_history(run_id):
+            key = (rec.run_id, rec.seq)
+            if key in self._records_cache:
+                continue
+            self._records_cache[key] = rec
+            added += 1
+        return added
 
 
 # Temporal Activity Definitions
@@ -217,7 +318,14 @@ if TEMPORAL_AVAILABLE:
                 maximum_interval=timedelta(seconds=60),
                 maximum_attempts=3,
             )
-            
+            # Compensation is the recovery path; bound its retries as well.
+            compensation_retry_policy = TemporalRetryPolicy(
+                initial_interval=timedelta(seconds=1),
+                backoff_coefficient=2.0,
+                maximum_interval=timedelta(seconds=30),
+                maximum_attempts=int(action_input.get("compensation_max_attempts", 2)),
+            )
+
             try:
                 execution_result = await temporal_workflow.execute_activity(
                     execute_adapter_activity,
@@ -231,6 +339,7 @@ if TEMPORAL_AVAILABLE:
                     verify_postcondition_activity,
                     args=(proposal, execution_result, verifier_config),
                     start_to_close_timeout=timedelta(seconds=60),
+                    retry_policy=retry_policy,
                 )
                 
                 if not verification.get("verified", False):
@@ -248,6 +357,7 @@ if TEMPORAL_AVAILABLE:
                     compensate_activity,
                     args=(proposal, {"error": str(exc)}, compensation_config),
                     start_to_close_timeout=timedelta(seconds=120),
+                    retry_policy=compensation_retry_policy,
                 )
                 
                 return {
