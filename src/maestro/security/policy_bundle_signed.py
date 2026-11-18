@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any
 
 from maestro.security.policy_bundle import PolicyBundle, PolicyRegistry
+from maestro.security.signers import SignerRegistry
 
 
 @dataclass
@@ -29,7 +30,6 @@ class PolicyBundleSignature:
     public_key: str = ""  # Public key used for verification
     key_id: str = ""  # Key identifier
 
-
 @dataclass
 class SignedPolicyBundle:
     """A policy bundle with cryptographic signatures."""
@@ -38,7 +38,7 @@ class SignedPolicyBundle:
     version: str = "1.0"
     requires_signatures: int = 2  # Two-person rule
     expires_at: float = 0.0
-    
+    signers: SignerRegistry | None = None    
     def content_hash(self) -> str:
         """Get content hash of the inner bundle."""
         return self.bundle.digest()
@@ -67,7 +67,7 @@ class SignedPolicyBundle:
 
         This helper is not an authenticated governance or deployment boundary.
         """
-        if not trusted_keys or self.requires_signatures < 1 or self.is_expired():
+        if self.requires_signatures < 1 or self.is_expired():
             return False
         signers = [sig.signed_by for sig in self.signatures]
         if (len(set(signers)) != len(signers) or len(signers) < self.requires_signatures
@@ -76,9 +76,17 @@ class SignedPolicyBundle:
         if required_signers and not all(signer in signers for signer in required_signers):
             return False
         bundle_hash = self.content_hash()
+
+        if self.signers is not None:
+            registry = self.signers
+            return all(self._verify_with_signer(bundle_hash, sig, registry)
+                       for sig in self.signatures)
+
+        if not trusted_keys:
+            return False
         return all(sig.signed_by == sig.key_id and sig.algorithm == "sha256"
-                   and self._verify_signature(bundle_hash, sig, trusted_keys.get(sig.key_id))
-                   for sig in self.signatures)
+                    and self._verify_signature(bundle_hash, sig, trusted_keys.get(sig.key_id))
+                    for sig in self.signatures)
     
     def _verify_signature(self, data: str, sig: PolicyBundleSignature, key: str | None) -> bool:
         """Verify a single signature."""
@@ -94,6 +102,18 @@ class SignedPolicyBundle:
         except Exception:
             return False
     
+    def _verify_with_signer(self, data: str, sig: PolicyBundleSignature,
+                            registry: SignerRegistry) -> bool:
+        try:
+            signer = registry.get(sig.signed_by)
+            if signer is None:
+                return False
+            if signer.identity() != sig.signed_by:
+                return False
+            return bool(signer.verify(data, sig.signature))
+        except Exception:
+            return False
+
     def is_expired(self) -> bool:
         """Check if bundle has expired."""
         if self.expires_at > 0:
@@ -133,7 +153,6 @@ class SignedPolicyBundle:
             expires_at=data.get("expires_at", 0.0),
         )
 
-
 class PolicySigner:
     """Signs policy bundles using various backends."""
     
@@ -163,7 +182,6 @@ class PolicySigner:
             data.encode(),
             hashlib.sha256,
         ).hexdigest()
-
 
 class CosignSigner:
     """Signs policy bundles using cosign (Sigstore)."""
@@ -230,7 +248,6 @@ class CosignSigner:
         finally:
             bundle_file.unlink(missing_ok=True)
 
-
 class NotarySigner:
     """Signs policy bundles using Notary v2."""
     
@@ -271,7 +288,6 @@ class NotarySigner:
         result = subprocess.run(cmd, capture_output=True, text=True)
         return result.returncode == 0
 
-
 class SignedPolicyRegistry(PolicyRegistry):
     """Policy registry that only accepts signed bundles."""
     
@@ -286,7 +302,6 @@ class SignedPolicyRegistry(PolicyRegistry):
     ):
         raise NotImplementedError("external signed-policy governance is unavailable; use the core PolicyRegistry")
 
-
 # --- Version Pinning ---
 
 @dataclass
@@ -297,7 +312,6 @@ class VersionPin:
     pinned_at: float = field(default_factory=time.time)
     pinned_by: str = ""
     reason: str = ""
-
 
 class VersionPinner:
     """Manages version pins for policy bundles."""
@@ -355,7 +369,6 @@ class VersionPinner:
     def list_pins(self) -> list[VersionPin]:
         return list(self.pins.values())
 
-
 # --- Exception Tracking ---
 
 @dataclass
@@ -373,7 +386,6 @@ class PolicyException:
     def is_valid(self, now: float | None = None) -> bool:
         at = now or time.time()
         return not (self.expires_at > 0 and at > self.expires_at)
-
 
 class ExceptionTracker:
     """Tracks policy exceptions with approval workflow."""
