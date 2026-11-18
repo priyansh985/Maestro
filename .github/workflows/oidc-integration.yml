@@ -1,0 +1,94 @@
+# OIDC real-provider interop lane (v1.1 roadmap item 3, first step).
+#
+# DEFINITION STATUS: DEFINED, NOT VERIFIED.
+# This workflow is a skeleton authored alongside the mock-JWKS contract tests.
+# It has NOT been executed in the environment where those tests were written
+# (no Docker/Keycloak and no usable shell there). Do NOT treat this file as
+# evidence of a green lane: `oidc_provider` must stay in NOT_RUN until this
+# workflow has actually run green in GitHub Actions.
+#
+# When enabled, it provisions a local Keycloak and runs the env-gated live
+# discovery + JWKS smoke in tests/test_oidc_contract.py. Full token validation
+# against Keycloak (key rollover, expired/malformed tokens) and the manual
+# Azure AD / Okta checklist remain follow-up work, tracked in the last step.
+
+name: OIDC provider interop (Keycloak)
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'src/maestro/server/oidc.py'
+      - 'tests/test_oidc_contract.py'
+      - '.github/workflows/oidc-integration.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  keycloak-interop:
+    name: Keycloak discovery + JWKS smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    services:
+      keycloak:
+        image: quay.io/keycloak/keycloak:24.0
+        ports:
+          - 8080:8080
+        env:
+          KEYCLOAK_ADMIN: admin
+          KEYCLOAK_ADMIN_PASSWORD: admin
+          KC_HTTP_ENABLED: 'true'
+          KC_HEALTH_ENABLED: 'true'
+          KC_HOSTNAME_URL: http://localhost:8080
+          KC_HOSTNAME_STRICT: 'false'
+        # Readiness is polled from the runner below (curl is guaranteed there);
+        # no container health-cmd is used because the Keycloak image may not
+        # ship curl.
+        # start-dev uses the built-in `master` realm. Importing a pinned realm
+        # export (with a dedicated maestro client + role groups) is a follow-up:
+        # it needs a fixture file outside this lane's authored scope.
+
+    env:
+      MAESTRO_OIDC_ISSUER: http://localhost:8080/realms/master
+      MAESTRO_OIDC_CLIENT_ID: maestro
+      MAESTRO_SIGNING_KEY: oidc-integration-lane-key
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      - name: Install dependencies
+        run: python -m pip install --upgrade pip && python -m pip install -e ".[dev,oidc]"
+
+      - name: Wait for Keycloak discovery document
+        run: |
+          for i in $(seq 1 60); do
+            if curl -fsS "$MAESTRO_OIDC_ISSUER/.well-known/openid-configuration" > /dev/null; then
+              echo "Keycloak is ready at $MAESTRO_OIDC_ISSUER"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Keycloak did not become ready in time" >&2
+          exit 1
+
+      - name: Run OIDC contract tests (mock + live-provider smoke)
+        # With MAESTRO_OIDC_ISSUER set, the env-gated smoke test runs against
+        # the service container; all other cases use httpx.MockTransport.
+        run: python -m pytest tests/test_oidc_contract.py -q
+
+      - name: Interop matrix status (honest, non-claiming)
+        if: always()
+        run: |
+          echo "::notice::OIDC interop status — Keycloak discovery + JWKS: gated by the CI lane above."
+          echo "::notice::NOT_RUN until this lane has run green: live Keycloak token validation (rollover/expired/malformed)."
+          echo "::notice::NOT_RUN (manual checklist needed): Azure AD and Okta issuer/audience/claim-quirk verification."
