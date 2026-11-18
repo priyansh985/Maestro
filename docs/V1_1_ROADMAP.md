@@ -14,11 +14,18 @@ not commitments.
 Status legend: `open` = not started; `in progress`; `done` = shipped in this
 cycle.
 
+Honesty note for `in progress` items: "DEFINED" means a CI lane/workflow exists
+in the repo but has **NOT** been executed in the environment where it was
+authored. Entries in `NOT_RUN` (`src/maestro/scripts/validation_evidence.py`) are
+left **unchanged** until a lane actually runs green — defining a lane is not
+evidence that the seam is proven. Each in-progress item below lists the
+acceptance criteria that remain open.
+
 ---
 
 ## 1. OS-level sandbox (Docker/gVisor)
 
-**Status:** open (seam)
+**Status:** in progress — first step landed (Linux CI lane DEFINED, NOT RUN; seam not yet proven)
 
 **Goal.** Promote `CTRL-L3-04` executor sandbox from in-process scope/output
 confinement to kernel-level isolation so a malicious or runaway adapter cannot
@@ -48,6 +55,17 @@ in-process contract.
 `runsc`, runs `tests/test_sandbox_external.py` with `MAESTRO_SANDBOX_REAL=1`,
 and fails on any mock fallback; gate merge on green.
 
+**First step landed (commit `2d6db8e`).** `src/maestro/security/sandbox.py`
+now fails closed on external invocation (no silent mock fallback), and
+`.github/workflows/linux-integration.yml` DEFINES a Linux CI lane that installs
+real `runsc`, smoke-tests Docker isolation (incl. `--network=none` egress
+denial), and runs `tests/test_sandbox_external.py` with
+`MAESTRO_SANDBOX_REAL=1`, failing the job if any case skips. HONESTY: the lane is
+DEFINED, NOT RUN — authored on a Windows host with no Docker/gVisor, so it has
+not executed here; `NOT_RUN` statuses are unchanged. Remaining acceptance
+criteria: full `runsc` guest execution, CPU/memory caps, timeout-kill evidence,
+and removal of the OS-sandbox seam note in `docs/audit`.
+
 **Acceptance criteria.**
 - Real `runsc`/`docker` execution path passes on Linux CI with no mocking.
 - Containment evidence: out-of-scope filesystem/network access denied, CPU/memory
@@ -64,7 +82,7 @@ compatibility check before promotion.
 
 ## 2. Temporal.io live backing
 
-**Status:** open (seam)
+**Status:** in progress — first step landed (history replay via client; NOT_RUN unchanged)
 
 **Goal.** Exercise the `TemporalJournal`/`ActionWorkflow` adapter against a
 live Temporal server so the durable backend claim is evidence-backed, not
@@ -93,6 +111,18 @@ replay/compensation integration tests).
 real `client.get_workflow_handle(...).fetch_history()` call and add an
 integration test gated on `TEMPORAL_ADDRESS` env var using `temporalio.testing.WorkflowEnvironment`.
 
+**First step landed (commit `5ad9390`).** `src/maestro/orchestration/temporal_backend.py`
+now reads activity outcomes from real workflow event history via
+`client.get_workflow_handle(...).fetch_history()` instead of a private cache;
+`sync_from_temporal` is append-only and de-dupes idempotency keys, and
+`ActionWorkflow` attaches bounded retry policies plus a compensation path.
+Contract covered by `tests/test_temporal_backend.py` (hand-written mock client,
+no network) and documented in `docs/TEMPORAL.md`. HONESTY: no live Temporal
+server, `WorkflowEnvironment`, or `temporal-integration` CI lane was run;
+`temporal` remains in `NOT_RUN` unchanged. Remaining acceptance criteria: live
+exactly-once replay suite, end-to-end compensation against a real server, a
+`TEMPORAL_ADDRESS`-gated CI lane, and evidence promotion.
+
 **Acceptance criteria.**
 - `TemporalJournal` passes the same exactly-once replay suite as the
   file-backed journal against a live Temporal server.
@@ -109,7 +139,7 @@ live-server smoke.
 
 ## 3. OIDC real-provider interop
 
-**Status:** open (seam)
+**Status:** in progress — first step landed (Keycloak CI lane DEFINED, NOT RUN; NOT_RUN unchanged)
 
 **Goal.** Verify the JWKS flow against real identity providers (Azure AD, Okta,
 Keycloak) so the in-process HMAC bearer can be replaced by SSO in production
@@ -136,6 +166,17 @@ item 5 (external signer identities) reuses the same OIDC trust roots.
 `tests/test_oidc_contract.py` to run against it with a pinned realm export;
 add a documented "provider interop matrix" checklist for Azure AD/Okta.
 
+**First step landed (commit `1a67452`).** `tests/test_oidc_contract.py` now
+covers the mock-JWKS contract (discovery, JWKS fetch, signing-key lookup, token
+validation edge cases), and `.github/workflows/oidc-integration.yml` DEFINES a
+Keycloak CI lane with an env-gated live discovery + JWKS smoke.
+`src/maestro/server/oidc.py` was intentionally left UNCHANGED. HONESTY: the lane
+is DEFINED, NOT RUN — no Keycloak was executed here; `oidc_provider` remains in
+`NOT_RUN` unchanged. Remaining acceptance criteria: pinned realm export, live
+token validation (key rollover, expired/malformed rejection), the manual Azure
+AD / Okta interop checklist, and E0-06 startup rejection of missing identity
+config.
+
 **Acceptance criteria.**
 - Keycloak integration test green in CI (discovery, JWKS fetch, key rollover,
   expired/malformed token rejection).
@@ -150,7 +191,7 @@ explicit claim-mapping config with per-provider fixtures.
 
 ## 4. Postgres RLS live seam
 
-**Status:** open (seam)
+**Status:** in progress — first step landed (robust splitter + Postgres CI lane DEFINED, NOT RUN)
 
 **Goal.** Wire the existing migration scripts + pool helpers to a real Postgres
 so structural multi-tenant isolation (`CTRL-L4-08`) is enforced by the database
@@ -177,6 +218,16 @@ E1 storage package.
 **First concrete step.** Replace `split(";")` with a proper statement splitter
 (or ship a single migration file executed via `psql`/`psycopg` `execute`),
 add `tests/test_postgres_rls.py` gated on `POSTGRES_DSN`.
+
+**First step landed (commit `c47b644`).** `src/maestro/memory/postgres_rls.py`
+replaces the naive `MIGRATION_SQL.split(";")` with a robust statement splitter,
+and `.github/workflows/postgres-integration.yml` DEFINES a PostgreSQL 18 CI lane
+with an env-gated live smoke in `tests/test_postgres_rls.py`. HONESTY: the lane
+is DEFINED, NOT RUN — no live Postgres was executed here; `postgres_rls` remains
+in `NOT_RUN` unchanged. Remaining acceptance criteria: live cross-tenant
+SELECT/INSERT/UPDATE/DELETE denial, missing-context fail-closed, pool-reuse
+context isolation, idempotent and reversible (rollback-tested) migration, and
+the `BYPASSRLS` startup check.
 
 **Acceptance criteria.**
 - Live Postgres integration test: cross-tenant SELECT/INSERT/UPDATE/DELETE
