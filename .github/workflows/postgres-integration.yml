@@ -5,11 +5,15 @@
 # PostgreSQL 18 service and sets POSTGRES_DSN so the gated live smoke test in
 # tests/test_postgres_rls.py actually runs here rather than skipping.
 #
-# Scope of the smoke test: the statements emitted by the new SQL splitter are
-# accepted by a real server. Full RLS enforcement assertions (cross-tenant
-# SELECT/INSERT/UPDATE/DELETE denied, missing context fails closed, pool reuse
-# does not leak context) and the BYPASSRLS startup check remain follow-up work
-# for this seam -- this lane is a foundation, not a claim that RLS is proven.
+# Scope of the smoke test: the statements emitted by the SQL splitter are
+# accepted by a real server. The gated live test now also contains a
+# cross-tenant SELECT deny assertion against a dedicated NOBYPASSRLS app role
+# (the superuser DSN used here has BYPASSRLS and cannot prove isolation alone),
+# and there is a pure offline `assert_no_bypassrls` startup guard. Neither has
+# been executed by the implementing agent (no Docker/Postgres available
+# locally). Missing-context fail-closed and pool-reuse context leak assertions
+# remain follow-up work -- this lane is a foundation, not a claim that RLS
+# enforcement is proven here.
 
 name: Postgres RLS integration
 

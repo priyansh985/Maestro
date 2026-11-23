@@ -131,6 +131,20 @@ def split_sql_statements(sql: str) -> list[str]:
     return statements
 
 
+def assert_no_bypassrls(bypasses_rls: bool, role_name: str = "current role") -> None:
+    """Refuse to claim RLS isolation when the connection role bypasses RLS.
+
+    Pure offline startup guard: callers pass the ``rolbypassrls`` value (or an
+    equivalent role description) for the role that will open application
+    connections. Superusers and roles with BYPASSRLS are not subject to
+    row-level security, so isolation cannot be claimed under such a role.
+    """
+    if bypasses_rls:
+        raise RuntimeError(
+            f"Database role {role_name!r} has BYPASSRLS; RLS isolation cannot be claimed"
+        )
+
+
 @dataclass
 class PostgresConfig:
     """PostgreSQL connection configuration."""
@@ -159,19 +173,19 @@ ALTER TABLE policies ENABLE ROW LEVEL SECURITY;
 
 RLS_POLICIES_SQL = """
 -- Memory Records: tenants can only access their own scope
-CREATE POLICY memory_records_tenant_isolation ON memory_records
+CREATE POLICY IF NOT EXISTS memory_records_tenant_isolation ON memory_records
     USING (tenant_id = current_setting('app.current_tenant'));
 
 -- Agents: tenants can only see their own agents
-CREATE POLICY agents_tenant_isolation ON agents
+CREATE POLICY IF NOT EXISTS agents_tenant_isolation ON agents
     USING (tenant_id = current_setting('app.current_tenant'));
 
 -- Ledger: tenants can only see their own ledger events
-CREATE POLICY ledger_tenant_isolation ON ledger_events
+CREATE POLICY IF NOT EXISTS ledger_tenant_isolation ON ledger_events
     USING (tenant_id = current_setting('app.current_tenant'));
 
 -- Policies: tenants can only see their own policies
-CREATE POLICY policies_tenant_isolation ON policies
+CREATE POLICY IF NOT EXISTS policies_tenant_isolation ON policies
     USING (tenant_id = current_setting('app.current_tenant'));
 """
 
@@ -196,7 +210,7 @@ END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
 -- Cross-tenant read policy (requires explicit capability)
-CREATE POLICY memory_records_cross_tenant_read ON memory_records
+CREATE POLICY IF NOT EXISTS memory_records_cross_tenant_read ON memory_records
     USING (
         tenant_id = current_setting('app.current_tenant')
         OR check_cross_tenant_read(tenant_id)

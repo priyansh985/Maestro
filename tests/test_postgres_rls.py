@@ -7,6 +7,7 @@ test runs only when ``POSTGRES_DSN`` is set (the CI lane defined in
 from __future__ import annotations
 
 import os
+import re
 from pathlib import Path
 from typing import Any
 
@@ -17,6 +18,7 @@ from maestro.memory.postgres_rls import (
     ROLLBACK_SQL,
     PostgresConfig,
     PostgresRLSManager,
+    assert_no_bypassrls,
     generate_migration_file,
     generate_rollback_file,
     split_sql_statements,
@@ -93,8 +95,14 @@ class TestSplitSqlStatements:
         func = next(s for s in statements if "FUNCTION check_cross_tenant_read" in s)
         assert "RETURN TRUE;" in func and "END;" in func
         assert func.endswith("$$ LANGUAGE plpgsql SECURITY DEFINER")
-        assert any("CREATE POLICY memory_records_tenant_isolation" in s for s in statements)
-        assert any("CREATE POLICY memory_records_cross_tenant_read" in s for s in statements)
+        assert any(
+            "CREATE POLICY IF NOT EXISTS memory_records_tenant_isolation" in s
+            for s in statements
+        )
+        assert any(
+            "CREATE POLICY IF NOT EXISTS memory_records_cross_tenant_read" in s
+            for s in statements
+        )
         assert any("FUNCTION clear_tenant_context" in s for s in statements)
 
     def test_rollback_sql_statements(self):
@@ -127,7 +135,10 @@ class TestDryRun:
     def test_dry_run_output_includes_statement_text(self):
         result = PostgresRLSManager(PostgresConfig()).run_migration(dry_run=True)
         assert any("CREATE TABLE IF NOT EXISTS memory_records" in entry for entry in result)
-        assert any("CREATE POLICY memory_records_tenant_isolation" in entry for entry in result)
+        assert any(
+            "CREATE POLICY IF NOT EXISTS memory_records_tenant_isolation" in entry
+            for entry in result
+        )
 
 
 class TestMigrationArtifacts:
@@ -151,13 +162,69 @@ class TestMigrationArtifacts:
         assert cfg.dsn == "postgresql://app:pw@db:5433/maestro?sslmode=prefer"
 
 
+class TestMigrationIdempotency:
+    """Re-running the migration/rollback must be a no-op at the SQL-text level."""
+
+    def test_create_policy_statements_use_if_not_exists(self):
+        statements = split_sql_statements(MIGRATION_SQL)
+        policies = [
+            s for s in statements if re.match(r"^CREATE\s+POLICY\b", s, re.IGNORECASE)
+        ]
+        assert len(policies) == 5
+        for stmt in policies:
+            assert re.match(
+                r"^CREATE\s+POLICY\s+IF\s+NOT\s+EXISTS\b", stmt, re.IGNORECASE
+            ), stmt
+
+    def test_create_table_statements_use_if_not_exists(self):
+        statements = split_sql_statements(MIGRATION_SQL)
+        tables = [
+            s for s in statements if re.match(r"^CREATE\s+TABLE\b", s, re.IGNORECASE)
+        ]
+        assert len(tables) == 4
+        for stmt in tables:
+            assert re.match(
+                r"^CREATE\s+TABLE\s+IF\s+NOT\s+EXISTS\b", stmt, re.IGNORECASE
+            ), stmt
+
+    def test_drop_policy_statements_use_if_exists(self):
+        statements = split_sql_statements(ROLLBACK_SQL)
+        policies = [
+            s for s in statements if re.match(r"^DROP\s+POLICY\b", s, re.IGNORECASE)
+        ]
+        assert len(policies) == 5
+        for stmt in policies:
+            assert re.match(r"^DROP\s+POLICY\s+IF\s+EXISTS\b", stmt, re.IGNORECASE), stmt
+
+
+class TestBypassRlsGuard:
+    """The startup guard must refuse to claim isolation for a BYPASSRLS role."""
+
+    def test_accepts_role_without_bypassrls(self):
+        assert_no_bypassrls(False, role_name="maestro_app")
+
+    def test_accepts_default_role_name(self):
+        assert_no_bypassrls(False)
+
+    def test_rejects_bypassrls_role(self):
+        with pytest.raises(RuntimeError, match="BYPASSRLS"):
+            assert_no_bypassrls(True, role_name="postgres")
+
+    def test_error_message_identifies_the_role(self):
+        with pytest.raises(RuntimeError, match="postgres"):
+            assert_no_bypassrls(True, role_name="postgres")
+
+
 @pytest.mark.skipif(not POSTGRES_DSN, reason="POSTGRES_DSN not set (live DB lane runs in CI)")
 class TestLivePostgresSmoke:
     """Gated live smoke test. Skipped in offline runs.
 
-    Proves the splitter's output is accepted by a real Postgres server. Full RLS
-    enforcement assertions (cross-tenant deny, missing-context fail-closed,
-    pool context leak) remain follow-up work for v1.1 item 4.
+    Proves the splitter's output is accepted by a real Postgres server and asserts
+    that a cross-tenant read is denied to a dedicated NOBYPASSRLS app role. The
+    CI DSN is a superuser (BYPASSRLS), so it cannot prove isolation by itself;
+    the deny test provisions its own non-bypassing role instead. It is still
+    gated and was not executed locally (no database available). Missing-context
+    fail-closed and pool context leak assertions remain follow-up work.
     """
 
     def test_migration_and_rollback_execute(self):
@@ -171,3 +238,58 @@ class TestLivePostgresSmoke:
                 cur.execute(stmt)
             for stmt in split_sql_statements(ROLLBACK_SQL):
                 cur.execute(stmt)
+
+    def test_cross_tenant_read_denied_for_app_role(self):
+        """RLS must hide another tenant's rows from a NOBYPASSRLS app role.
+
+        The DSN used by this lane belongs to a superuser, which bypasses RLS, so
+        the assertion provisions a dedicated non-bypassing role. Gated by
+        POSTGRES_DSN; skipped in offline runs and not executed by the implementer.
+        """
+        psycopg: Any = pytest.importorskip("psycopg")
+        from psycopg.conninfo import make_conninfo
+
+        assert POSTGRES_DSN is not None
+        role = "maestro_rls_probe"
+        password = "maestro_rls_probe_pw"
+
+        with (
+            psycopg.connect(POSTGRES_DSN, autocommit=True) as admin,
+            admin.cursor() as cur,
+        ):
+            cur.execute("DROP TABLE IF EXISTS rls_probe CASCADE")
+            cur.execute(f'DROP ROLE IF EXISTS "{role}"')
+            cur.execute(
+                f'CREATE ROLE "{role}" LOGIN PASSWORD \'{password}\' NOBYPASSRLS'
+            )
+            cur.execute(
+                "CREATE TABLE rls_probe (tenant_id TEXT NOT NULL, data TEXT NOT NULL)"
+            )
+            cur.execute("ALTER TABLE rls_probe ENABLE ROW LEVEL SECURITY")
+            cur.execute(
+                "CREATE POLICY IF NOT EXISTS rls_probe_tenant_isolation ON rls_probe "
+                "USING (tenant_id = current_setting('app.current_tenant'))"
+            )
+            cur.execute(f'GRANT SELECT ON rls_probe TO "{role}"')
+            cur.execute(
+                "INSERT INTO rls_probe (tenant_id, data) VALUES ('tenant-b', 'secret')"
+            )
+
+        try:
+            app_dsn = make_conninfo(POSTGRES_DSN, user=role, password=password)
+            with (
+                psycopg.connect(app_dsn, autocommit=True) as app,
+                app.cursor() as cur,
+            ):
+                cur.execute("SET app.current_tenant = 'tenant-a'")
+                cur.execute("SELECT data FROM rls_probe WHERE tenant_id = 'tenant-b'")
+                assert cur.fetchall() == [], (
+                    "RLS must deny cross-tenant reads to the non-BYPASSRLS app role"
+                )
+        finally:
+            with (
+                psycopg.connect(POSTGRES_DSN, autocommit=True) as admin,
+                admin.cursor() as cur,
+            ):
+                cur.execute("DROP TABLE IF EXISTS rls_probe CASCADE")
+                cur.execute(f'DROP ROLE IF EXISTS "{role}"')
