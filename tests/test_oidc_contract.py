@@ -26,7 +26,6 @@ from jose import jwt
 from maestro.server.auth import Role
 from maestro.server.oidc import (
     ClaimMappingError,
-    JWKSFetchError,
     OIDCAuthService,
     OIDCClient,
     OIDCProviderConfig,
@@ -211,7 +210,7 @@ def test_unpublished_kid_is_rejected(provider: tuple[MockProvider, OIDCClient]) 
     token = jwt.encode(
         _claims(), rogue_pem, algorithm="RS256", headers={"kid": "not-published"}
     )
-    with pytest.raises((JWKSFetchError, TokenValidationError)):
+    with pytest.raises(TokenValidationError):
         client.validate_id_token(token)
 
 
@@ -226,6 +225,24 @@ def test_audience_mismatch_is_rejected(provider: tuple[MockProvider, OIDCClient]
     mock, client = provider
     token = mock.sign("k1", **_claims(aud="another-client"))
     with pytest.raises(TokenValidationError):
+        client.validate_id_token(token)
+
+
+def test_token_without_audience_is_rejected(provider: tuple[MockProvider, OIDCClient]) -> None:
+    mock, client = provider
+    claims = _claims()
+    del claims["aud"]
+    token = mock.sign("k1", **claims)
+    with pytest.raises(TokenValidationError, match="missing required key"):
+        client.validate_id_token(token)
+
+
+def test_token_without_issuer_is_rejected(provider: tuple[MockProvider, OIDCClient]) -> None:
+    mock, client = provider
+    claims = _claims()
+    del claims["iss"]
+    token = mock.sign("k1", **claims)
+    with pytest.raises(TokenValidationError, match="missing required key"):
         client.validate_id_token(token)
 
 

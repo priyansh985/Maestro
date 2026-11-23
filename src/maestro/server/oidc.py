@@ -148,7 +148,9 @@ class OIDCClient:
         
         key = self._jwks_cache.get_key(kid)
         if not key:
-            raise JWKSFetchError(f"No signing key found for kid: {kid}")
+            # The JWKS fetch succeeded; this token references a kid the provider
+            # does not publish. That is a token failure, not a transport failure.
+            raise TokenValidationError(f"No signing key found for kid: {kid}")
         return key
     
     # --- Token Validation ---
@@ -181,7 +183,13 @@ class OIDCClient:
                 algorithms=["RS256", "RS384", "RS512", "ES256", "ES384", "ES512"],
                 audience=audience or self.config.client_id,
                 issuer=self.config.issuer,
-                options={"verify_exp": True, "verify_aud": True, "verify_iss": True},
+                options={
+                    "verify_exp": True,
+                    "verify_aud": True,
+                    "verify_iss": True,
+                    "require_aud": True,
+                    "require_iss": True,
+                },
             )
             
             # Verify nonce if provided
